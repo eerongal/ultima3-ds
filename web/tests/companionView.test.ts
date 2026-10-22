@@ -64,7 +64,7 @@ describe('companion exploration context', () => {
   });
 
   it.each([Location.Sosaria, Location.Ambrosia, Location.Town, Location.Castle, Location.Combat])(
-    'retains the existing map for location %s in this first slice',
+    'does not treat location flag %s alone as a loaded settlement',
     (location) => {
       const world = newWorld();
       world.party.location = location;

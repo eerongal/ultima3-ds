@@ -1,6 +1,5 @@
 import type { World } from './world.ts';
 import { MapId } from '../data/resources.ts';
-import { Location } from './party.ts';
 import { MAP_SIDE } from './automap.ts';
 import { MapValue } from './tiles.ts';
 import { MONSTER_SLOTS } from './monsterTable.ts';
@@ -47,10 +46,11 @@ const APPROACHES = [
 const COUNTER_DISTANCE = 2;
 const GROUP_DISTANCE = 3;
 
-export function isTownMap(world: World): boolean {
+/** Castles and towns share the same entered, whole-settlement map layout. */
+export function isSettlementMap(world: World): boolean {
   return (
-    world.party.location === Location.Town &&
-    world.current.id >= MapId.FirstTown &&
+    world.inTownOrCastle &&
+    world.current.id >= MapId.LordBritishCastle &&
     world.current.id < MapId.FirstDungeon &&
     world.current.size === MAP_SIDE
   );
@@ -82,16 +82,21 @@ function shopMarks(world: World, index: number): TownMark[] {
 
 function personMark(world: World, index: number): TownMark[] {
   const person = world.monsters.talkIndex(index);
-  if (!person || !speech(world.current.talk, person).trim()) return [];
+  const audience = world.monsters.type(index) === MapValue.LordBritish;
+  if (!audience && (!person || !speech(world.current.talk, person).trim())) return [];
   return [{ kind: TownMarkKind.Talk, x: world.monsters.x(index), y: world.monsters.y(index) }];
 }
 
 /** Live locations are intentionally independent of discovery; drawing them never records exploration. */
 export function townMarks(world: World): TownMark[] {
-  if (world.combat || !isTownMap(world)) return [];
+  if (world.combat || !isSettlementMap(world)) return [];
   const marks: TownMark[] = [];
-  for (let index = 0; index < MONSTER_SLOTS; index++) {
-    if (!world.monsters.type(index)) continue;
+  const slots = Array.from({ length: MONSTER_SLOTS }, (_, index) => index);
+  const king = slots.find((index) => world.monsters.type(index) === MapValue.LordBritish);
+  // Nearby conversations may be grouped, but the king's audience must retain his exact square.
+  if (king !== undefined) appendDistinctMarks(marks, personMark(world, king));
+  for (const index of slots) {
+    if (index === king || !world.monsters.type(index)) continue;
     const shops = shopMarks(world, index);
     const candidates = shops.length ? shops : personMark(world, index);
     appendDistinctMarks(marks, candidates);

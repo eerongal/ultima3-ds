@@ -85,7 +85,7 @@ dungeon writing and questions. Even one-line movement results remain above. See 
 [dual-screen guide](../docs/dual-screen.md) for building, testing and device compatibility.
 In dungeons, dual-screen mode automatically pairs first person with the explored
 level overhead; top-only mode restores the saved dungeon-view preference.
-Towns show the explored whole-town map with immediate shop/talk symbols and a
+All ten towns and both castles show the explored whole-settlement map with immediate shop/talk symbols and a
 key; unexplored terrain stays hidden. Longer messages and prompts temporarily
 replace the key, which returns with the next one-line result.
 Battles show Now/Up next in the actual turn sequence, with an enemy name/count

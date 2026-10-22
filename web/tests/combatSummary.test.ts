@@ -85,7 +85,8 @@ describe('read-only combat summary', () => {
     { location: Location.Sosaria, map: MapId.Sosaria, restored: CompanionView.WorldMap },
     { location: Location.Ambrosia, map: MapId.Ambrosia, restored: CompanionView.WorldMap },
     { location: Location.Town, map: MapId.FirstTown, restored: CompanionView.TownMap },
-    { location: Location.Castle, map: MapId.LordBritishCastle, restored: CompanionView.WorldMap },
+    { location: Location.Castle, map: MapId.LordBritishCastle, restored: CompanionView.TownMap },
+    { location: Location.Castle, map: MapId.ExodusCastle, restored: CompanionView.TownMap },
     { location: Location.Dungeon, map: MapId.FirstDungeon, restored: CompanionView.DungeonMap },
   ])('overrides location $location during a fight and restores its existing context afterward', ({ location, map, restored }) => {
     const { world, combat } = battle();

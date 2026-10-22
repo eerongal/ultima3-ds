@@ -24,23 +24,29 @@ including repeated-action counts; it is not a session archive.
 
 With the companion available, the main display uses its right column for context:
 
-| Context            | Right panel                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| Sosaria / Ambrosia | Explored world minimap, with 1×/2×/4× zoom                                            |
-| Town               | Whole-town map; terrain remains discovery-gated, shop/talk markers appear immediately |
-| Dungeon            | Explored whole level beside the first-person view                                     |
-| Combat             | Now / Up next turn list, with an enemy name and remaining-count footer                |
-| Castle             | Existing world map marking the entered location                                       |
+| Context            | Right panel                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| Sosaria / Ambrosia | Explored world minimap, with 1×/2×/4× zoom                                                  |
+| Town / Castle      | Whole-settlement map; terrain remains discovery-gated, shop/talk markers appear immediately |
+| Dungeon            | Explored whole level beside the first-person view                                           |
+| Combat             | Now / Up next turn list, with an enemy name and remaining-count footer                      |
 
 The world zoom defaults to 2× and is remembered under **Pause → Visuals →
-Minimap zoom**. Towns and dungeons use a fixed whole-area scale. Dungeon maps
+Minimap zoom**. Towns, castles and dungeons use a fixed whole-area scale. Dungeon maps
 retain the existing darkness, discovery, wrapping and subtle secret-door rules.
 The saved dungeon-view preference remains available for single-screen fallback.
 
-The town key identifies pubs, food, healing, weapons, armour, guilds, oracles,
+The settlement panel covers all twelve town/castle maps: Lord British's castle,
+Exodus's castle, Britain, Moon, Yew, East and West Montor, Grey, Dawn, Devil
+Guard, Fawn and Death Gulch. Sosaria and Ambrosia retain their overworld panels;
+Ambrosia's shrines are encounters on that continent, with no separate town map.
+
+The town-style key identifies pubs, food, healing, weapons, armour, guilds, oracles,
 horses and townspeople with dialogue. Adjacent markers of the same kind are
 grouped; moving people update their markers. Individual NPC names and interactive
-location details are deferred. The modal atlas retains its original rules.
+location details are deferred. Lord British's audience uses a talk marker at his
+exact square even without a normal dialogue index; nearby conversations cannot
+displace it. The modal atlas retains its original rules.
 
 Combat retains the engine's fixed party-then-enemies sequence. The turn list
 omits dead/empty slots and updates for revival and time negation, including the
@@ -137,7 +143,7 @@ same debug signing key when updating the test app to retain its storage.
 
 ## Validation and remaining work
 
-As of October 22, 2026, the latest check has 485 passing web tests and 30
+As of October 22, 2026, the latest check has 495 passing web tests and 30
 passing Android unit tests. The web run excludes `web/tests/steamArt.test.ts`,
 which has four pre-existing Windows failures (Unix paths, symlink permissions and permission-mode
 expectations). Web type checking/lint/formatting, production bundling, Android
@@ -173,7 +179,7 @@ Before claiming support on another handheld, check:
 5. Ordinary travel, shopping, dungeon navigation, a full battle and save/load.
 
 Backlog: other-device validation, screen-role selection, smaller-screen tuning,
-castle maps, named/selectable town locations and richer enemy information.
+named/selectable settlement locations and richer enemy information.
 Release builds retain ordinary single-screen fallback when no companion is available.
 
 For lifecycle, selection, input-focus and fallback diagnostics:
