@@ -14,7 +14,7 @@ const SYMBOLS: Record<TownMarkKind, string> = {
   [TownMarkKind.Talk]: '?',
 };
 
-/** Five rows fit below the map without using the current command line. Prompts temporarily replace the key. */
+/** Five rows fit beside a one-line result and command line. Longer output/questions temporarily replace the key. */
 export const TOWN_KEY = ['P Pub   F Food', 'H Heal  W Arms', 'A Armor G Guild', 'O Oracle R Horse', '? Talk  [] You'] as const;
 const SYMBOL_CELLS = 0.5;
 const SYMBOL_PADDING = 1;

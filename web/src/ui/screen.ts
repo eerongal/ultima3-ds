@@ -137,7 +137,7 @@ const PAGE_TOP = 1;
 const BOX_PITCH = 3;
 const BOX_SEPARATORS = [3, 6, 9, 12];
 const BOXES_BOTTOM = 12;
-/** The companion layout uses the column's full width, leaving six rows below for active prompts. */
+/** The companion layout uses the column's full width, leaving six rows below for recent output and prompts. */
 const PERSISTENT_MAP_SIDE = CARD_WIDTH;
 const PERSISTENT_MAP_BOTTOM = PERSISTENT_MAP_SIDE + 1;
 const TEXT_LEFT = 24;
@@ -468,7 +468,9 @@ export class Screen implements GameIO {
   setCompanionAvailable(available: boolean): void {
     if (this.companionAvailable === available) return;
     this.companionAvailable = available;
-    console.info(available ? 'Companion layout enabled' : 'Companion layout: restoring upper-screen party status');
+    console.info(
+      available ? 'Companion layout enabled; latest output remains above' : 'Companion layout: restoring upper-screen party status',
+    );
     if (this.companionTitleMenu.open && !this.underPaused) this.showMenuNow();
   }
 
@@ -498,7 +500,7 @@ export class Screen implements GameIO {
     if (!this.menu) return false;
     const bottom = this.menu.y + this.menu.visibleRows + 2;
     const transitioning = this.upperMap !== this.companionAvailable;
-    const townKey = this.upperMap && !this.messagePrompts && companionView(this.world, this.upperMap) === CompanionView.TownMap;
+    const townKey = this.townKeyFits && companionView(this.world, this.upperMap) === CompanionView.TownMap;
     const mapBottom = PERSISTENT_MAP_BOTTOM + (townKey ? TOWN_KEY.length : 0);
     const panelBottom = transitioning ? ROWS - 1 : this.upperMap ? mapBottom : BOXES_BOTTOM;
     const coversBox = this.menu.x + this.menu.width > TEXT_LEFT - 1 && this.menu.y <= panelBottom;
@@ -764,12 +766,17 @@ export class Screen implements GameIO {
   }
 
   private paintTownKey(): void {
-    if (!this.upperMap || this.messagePrompts || this.companionViewState !== CompanionView.TownMap) return;
+    if (!this.townKeyFits || this.companionViewState !== CompanionView.TownMap) return;
     TOWN_KEY.forEach((line, index) => this.drawText(line, TEXT_LEFT, PERSISTENT_MAP_BOTTOM + 1 + index));
   }
 
+  private get townKeyFits(): boolean {
+    return this.upperMap && !this.messagePrompts && TEXT_TOP + this.firstMessageRow > PERSISTENT_MAP_BOTTOM + TOWN_KEY.length;
+  }
+
   private get firstMessageRow(): number {
-    return firstUpperMessageRow(this.upperMap, this.messagePrompts > 0);
+    const latest = this.thisTurn.rows.length > 0 ? this.thisTurn : this.prevTurn;
+    return firstUpperMessageRow(this.upperMap, this.messagePrompts > 0, latest?.rows[0]);
   }
 
   private paintMessageRow(row: number): void {
@@ -899,9 +906,10 @@ export class Screen implements GameIO {
 
   prompt(): void {
     this.endTurn(); // may print unfolded lines, so before the prompt row is cleared
+    this.textRows[TEXT_BOTTOM - 1 - TEXT_TOP].fill(' ');
+    if (this.upperMap) this.redrawTextArea();
     this.piece(Piece.BottomTee, 23, 23);
     this.piece(Piece.CapLeft, 24, 23);
-    this.textRows[TEXT_BOTTOM - 1 - TEXT_TOP].fill(' ');
     for (let x = TEXT_LEFT + 1; x < TEXT_RIGHT; x++) this.drawText(' ', x, TEXT_BOTTOM - 1);
     this.cursorX = TEXT_LEFT + 1;
     this.cursorY = TEXT_BOTTOM - 1;

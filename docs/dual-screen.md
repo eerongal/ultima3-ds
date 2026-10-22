@@ -49,8 +49,16 @@ member is not mistaken for the current actor. Zero enemies shows Resolving;
 the engine still decides when the fight ends. Hidden enemy statistics are not
 exposed.
 
-Active questions and text input remain on the main display and temporarily
-replace the town key. Context cards cover and restore the adjacent panel. When
+The main display keeps the latest output block plus its command line visible:
+a one-line result (including movement) uses two rows; longer output expands up
+to six rows below the context panel. Dialogue and dungeon writing remain there
+at the next command wait without requiring a question or confirmation. This is
+the latest turn's output, with no heuristic importance filter or timed dismissal;
+the lower Messages panel retains the full eleven-row buffer.
+
+Active questions and text input also expand the upper text area. Longer output
+and questions temporarily replace the town key; a subsequent one-line result
+restores it. Context cards cover and restore the adjacent panel. When
 the companion becomes unavailable, the original upper character boxes and full
 message window return, including unfinished input. Repainting waits behind
 overlapping menus.
@@ -129,7 +137,7 @@ same debug signing key when updating the test app to retain its storage.
 
 ## Validation and remaining work
 
-As of October 21, 2026, the latest check has 481 passing web tests and 30
+As of October 22, 2026, the latest check has 485 passing web tests and 30
 passing Android unit tests. The web run excludes `web/tests/steamArt.test.ts`,
 which has four pre-existing Windows failures (Unix paths, symlink permissions and permission-mode
 expectations). Web type checking/lint/formatting, production bundling, Android

@@ -79,12 +79,15 @@ Visual settings update both displays; native logs provide diagnostics.
 On the title page, the main menu moves to the companion with touch and controller
 selection. Party details and pinned hints appear only during gameplay. Title
 submenus remain above; disabling the companion restores the upper main menu.
-Recent messages appear below the lower party list; active prompts remain above. See the
+Recent messages appear below the lower party list. The upper screen keeps the
+latest output block and command line, expanding up to six rows for dialogue,
+dungeon writing and questions. Even one-line movement results remain above. See the
 [dual-screen guide](../docs/dual-screen.md) for building, testing and device compatibility.
 In dungeons, dual-screen mode automatically pairs first person with the explored
 level overhead; top-only mode restores the saved dungeon-view preference.
 Towns show the explored whole-town map with immediate shop/talk symbols and a
-key; unexplored terrain stays hidden and prompts temporarily replace the key.
+key; unexplored terrain stays hidden. Longer messages and prompts temporarily
+replace the key, which returns with the next one-line result.
 Battles show Now/Up next in the actual turn sequence, with an enemy name/count
 footer. Dead slots, revival and time negation update the pending list; ordinary
 exploration views return when the battle ends.

@@ -135,6 +135,8 @@ describe('town map presentation', () => {
       menu: null,
       drawText: draw,
       textRows: [Array<string>(16).fill(' ')],
+      thisTurn: { texts: [], rows: [] },
+      prevTurn: null,
       black: vi.fn(),
     });
     const state = screen as unknown as { paintTownKey(): void; upperPanelCovered(): boolean; messagePrompts: number; menu: unknown };
@@ -198,6 +200,8 @@ describe('town map presentation', () => {
       upperMap: true,
       messagePrompts: 0,
       textRows: rows,
+      thisTurn: { texts: [], rows: [] },
+      prevTurn: null,
       companionViewState: CompanionView.TownMap,
     });
     const state = screen as unknown as { redrawTextArea(): void; companionViewState: CompanionView };
@@ -207,7 +211,7 @@ describe('town map presentation', () => {
     draw.mockClear();
     state.companionViewState = CompanionView.WorldMap;
     state.redrawTextArea();
-    expect(draw.mock.calls).toHaveLength(1);
+    expect(draw.mock.calls).toHaveLength(2);
     expect(black).toHaveBeenLastCalledWith(24, 17, 16, 7);
   });
 });
