@@ -55,7 +55,7 @@ The APK is the only `.apk` in a release, so no asset filter is needed.
 
 ## Building
 
-Requirements: Node 22, a JDK (17 or newer) and the Android SDK with
+Requirements: Node 22, JDK 21 and the Android SDK with
 platform 35 and build-tools (Android Studio installs them; on a CI runner
 they are preinstalled).
 
@@ -71,6 +71,21 @@ background from `../desktop/build/icon.png` (it uses the Playwright
 Chromium from the web project's tooling).
 
 ## Signing
+
+The debug build is a separate **Ultima III DS PoC** app, with an optional
+second-display live party/pinned-journal-hint panel, an upper world map with
+1×/2×/4× zoom in place of the character boxes, and matching bitmap fonts/borders.
+Visual settings update both displays; native logs provide diagnostics.
+Recent messages appear below the lower party list; active prompts remain above. See the
+[dual-screen guide](../docs/dual-screen.md) for building, testing and device compatibility.
+In dungeons, dual-screen mode automatically pairs first person with the explored
+level overhead; top-only mode restores the saved dungeon-view preference.
+Towns show the explored whole-town map with immediate shop/talk symbols and a
+key; unexplored terrain stays hidden and prompts temporarily replace the key.
+Battles show Now/Up next in the actual turn sequence, with an enemy name/count
+footer. Dead slots, revival and time negation update the pending list; ordinary
+exploration views return when the battle ends.
+Release builds keep the ordinary game and do not enable the panel.
 
 Android refuses an unsigned APK, and refuses to update an app whose new
 build is signed with a different key. `sideload.keystore` is therefore

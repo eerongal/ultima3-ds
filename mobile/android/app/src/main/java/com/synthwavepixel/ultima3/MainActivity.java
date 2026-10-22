@@ -13,14 +13,20 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import com.synthwavepixel.ultima3.diagnostics.DualScreenProbe;
+import com.synthwavepixel.ultima3.companion.PartySnapshot;
+import com.synthwavepixel.ultima3.companion.CompanionTheme;
+import com.synthwavepixel.ultima3.companion.PartyStatusPlugin;
 
 /**
  * The game's activity: the web view fills the screen with the system bars hidden (a swipe from an edge shows them
  * for a moment) - hidden again whenever they come back, as on waking from sleep, and at any button or touch after,
  * after the Ultima V port's - the Back button opens the game's Pause menu as Escape does on a keyboard, and
- * QuitPlugin lets the title menu's Quit close the app. Everything else is Capacitor's BridgeActivity.
+ * QuitPlugin lets the title menu's Quit close the app. Debug builds also host the dual-screen diagnostic probe.
  */
-public class MainActivity extends BridgeActivity {
+public class MainActivity extends BridgeActivity implements PartyStatusPlugin.Host {
+  private DualScreenProbe displayProbe;
+
   /** After waking, when the bars are hidden again (ms): the lock screen, and Android putting them back, take a while. */
   private static final long[] AFTER_WAKING = {0, 500, 1500, 3000};
 
@@ -46,6 +52,7 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(QuitPlugin.class); // before super.onCreate, which builds the bridge with the plugins it has
+    if (getResources().getBoolean(R.bool.dual_screen_poc)) registerPlugin(PartyStatusPlugin.class);
     super.onCreate(savedInstanceState);
     hideSystemBars();
     // Whenever the bars come back to stay (a swipe's are only shown for a moment, and leave the insets alone), they
@@ -57,10 +64,52 @@ public class MainActivity extends BridgeActivity {
     IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
     filter.addAction(Intent.ACTION_USER_PRESENT);
     ContextCompat.registerReceiver(this, woken, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+    if (getResources().getBoolean(R.bool.dual_screen_poc)) {
+      displayProbe = new DualScreenProbe(this, getBridge().getWebView(), this::companionAvailabilityChanged);
+    }
+  }
+
+  @Override
+  public void onStart() {
+    super.onStart();
+    if (displayProbe != null) displayProbe.start();
+  }
+
+  @Override
+  public void acceptPartyStatus(PartySnapshot snapshot) {
+    if (displayProbe != null) displayProbe.updateParty(snapshot);
+  }
+
+  @Override
+  public void acceptCompanionTheme(CompanionTheme theme) {
+    if (displayProbe != null) displayProbe.updateTheme(theme);
+  }
+
+  @Override
+  public boolean isCompanionAvailable() {
+    return displayProbe != null && displayProbe.isAvailable();
+  }
+
+  private void companionAvailabilityChanged(boolean available) {
+    com.getcapacitor.PluginHandle handle = getBridge().getPlugin("PartyStatus");
+    if (handle != null) ((PartyStatusPlugin) handle.getInstance()).availabilityChanged(available);
+  }
+
+  @Override
+  public void onStop() {
+    if (displayProbe != null) displayProbe.stop();
+    super.onStop();
+  }
+
+  @Override
+  public void onPause() {
+    if (displayProbe != null) displayProbe.lifecycle("paused");
+    super.onPause();
   }
 
   @Override
   public void onDestroy() {
+    if (displayProbe != null) displayProbe.stop();
     unregisterReceiver(woken);
     super.onDestroy();
   }
@@ -68,6 +117,10 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onResume() {
     super.onResume();
+    if (displayProbe != null) {
+      displayProbe.lifecycle("resumed");
+      displayProbe.refresh();
+    }
     // Woken from sleep, Android puts the bars back without the window ever losing its focus (an AYN Odin 3, on
     // Android 15), and not always at once: hidden now, and again over the next few seconds.
     hideAfterWaking();
@@ -103,6 +156,7 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onWindowFocusChanged(boolean hasFocus) {
     super.onWindowFocusChanged(hasFocus);
+    if (displayProbe != null) displayProbe.focusChanged(hasFocus);
     if (hasFocus) hideSystemBars();
   }
 
@@ -111,6 +165,12 @@ public class MainActivity extends BridgeActivity {
     WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
     controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
     controller.hide(WindowInsetsCompat.Type.systemBars());
+  }
+
+  @Override
+  public boolean dispatchKeyEvent(KeyEvent event) {
+    if (displayProbe != null) displayProbe.keyEvent(event);
+    return super.dispatchKeyEvent(event);
   }
 
   @Override

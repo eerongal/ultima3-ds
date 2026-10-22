@@ -389,6 +389,8 @@ export const WORDS: { word: string; about: string; hint: string }[] = [
 
 /** A line of the journal. */
 export interface JournalLine {
+  /** Stable subject identity, independent of row order, translated names and discovery/progress. */
+  id: string;
   /** The row: its name at the left and, at the right, where it stands (row). */
   label: string;
   /** Its name alone, for its card's title. */
@@ -419,8 +421,8 @@ function row(name: string, right = ''): string {
 }
 
 /** A line not yet known of: its hint is still there for the asking. */
-function mystery(hint: string, about = 'Not yet heard of.'): JournalLine {
-  return { label: MYSTERY, name: MYSTERY, about, hint };
+function mystery(id: string, hint: string, about = 'Not yet heard of.'): JournalLine {
+  return { id, label: MYSTERY, name: MYSTERY, about, hint };
 }
 
 /** The members in the party. */
@@ -551,8 +553,9 @@ function mainQuest(world: World): JournalLine[] {
     // Known once a line names it, or the party has made a start on it; a line that only bears on it waits for that.
     const named = world.journal.clues.some((id) => CLUES[id]?.names?.includes(step.id));
     const known = step.id === 'king' || step.id === 'exodus' || state.started || state.done || named;
-    if (!known) return mystery(step.hint);
-    const line: JournalLine = { label: row(step.name, state.right), name: step.name, about: state.about, hint: step.hint };
+    const id = `quest:${step.id}`;
+    if (!known) return mystery(id, step.hint);
+    const line: JournalLine = { id, label: row(step.name, state.right), name: step.name, about: state.about, hint: step.hint };
     if (told.length) line.open = { title: step.name, text: told.map((id) => `${clueFrom(world, id)}: ${clueText(world, id)}`) };
     return line;
   });
@@ -570,6 +573,7 @@ function townCount(world: World, town: (typeof TOWNS)[number]): { heard: number;
 }
 
 function townLine(world: World, town: (typeof TOWNS)[number]): JournalLine {
+  const id = `town:${town.id}`;
   const { heard: n, all } = townCount(world, town);
   const entered = beenIn(world, town.id) || n > 0;
   let seen = seenOnSosaria(world, town.id);
@@ -580,10 +584,11 @@ function townLine(world: World, town: (typeof TOWNS)[number]): JournalLine {
   }
   // Dawn and the isles' towns are mysteries till seen, entered or told of; the rest are named from the start.
   if (HIDDEN_TOWNS.includes(town.id) && !entered && !seen && !heardOf(world, (c) => !!c.reveals?.includes(town.id))) {
-    return mystery(town.hint);
+    return mystery(id, town.hint);
   }
   if (!entered) {
     return {
+      id,
       label: row(town.name, seen ? 'seen' : ''),
       name: town.name,
       about: seen
@@ -603,6 +608,7 @@ function townLine(world: World, town: (typeof TOWNS)[number]): JournalLine {
     return clueText(world, id);
   });
   return {
+    id,
     label: row(town.name, `${n}/${all}`),
     name: town.name,
     about: n === all ? 'Entered. All its clues found.' : `Entered. ${n} of its ${all} clues found.`,
@@ -617,12 +623,13 @@ function goalFound(world: World, dungeon: number, goal: Goal): boolean {
 }
 
 function dungeonLine(world: World, dungeon: (typeof DUNGEONS)[number]): JournalLine {
+  const id = `dungeon:${dungeon.id}`;
   const found = dungeon.goals.filter((g) => goalFound(world, dungeon.id, g));
   const entered = beenIn(world, dungeon.id) || found.length > 0;
   const seen = seenOnSosaria(world, dungeon.id);
   // A mystery till its entrance is seen, the party has been in, or a line names it, as the towns on isles are.
-  if (!entered && !seen && !heardOf(world, (c) => !!c.reveals?.includes(dungeon.id))) return mystery(dungeon.hint);
-  const base = { name: dungeon.name, hint: dungeon.hint };
+  if (!entered && !seen && !heardOf(world, (c) => !!c.reveals?.includes(dungeon.id))) return mystery(id, dungeon.hint);
+  const base = { id, name: dungeon.name, hint: dungeon.hint };
   if (!entered)
     return { ...base, label: row(dungeon.name, seen ? 'seen' : ''), about: seen ? 'Found, not yet entered.' : 'Heard of, not yet found.' };
   const all = found.length === dungeon.goals.length;
@@ -654,7 +661,7 @@ function ambrosiaLines(world: World): JournalLine[] {
       const card = who.length ? `The Card of ${CARDS[i]}: held by ${who.join(', ')}.` : 'Its card is not yet found.';
       about = `Entered. Gold offered here raises ${name}. ${card}`;
     } else if (seen) about = 'Found, not yet entered.';
-    return { label: row(name, who.length ? CARDS[i] : seen || entered ? 'seen' : ''), name, about, hint };
+    return { id: `shrine:${i}`, label: row(name, who.length ? CARDS[i] : seen || entered ? 'seen' : ''), name, about, hint };
   });
 }
 
@@ -673,6 +680,7 @@ function rumours(world: World): { lines: JournalLine[]; heard: number; all: numb
   const verses = RUMOURS.filter((n) => told(`Radrion:${n}`)).length;
   const lines: JournalLine[] = [
     {
+      id: 'rumours:pubs',
       label: row('Pub rumours', `${pubs}/9`),
       name: 'Pub rumours',
       about: `Every pub tells the same nine, picked by what the drink costs. ${pubs} of 9 heard.`,
@@ -681,13 +689,14 @@ function rumours(world: World): { lines: JournalLine[]; heard: number; all: numb
     },
     world.journal.radrion
       ? {
+          id: 'rumours:radrion',
           label: row('Radrion', `${verses}/9`),
           name: 'Radrion',
           about: `The Prophet of Life sells his rhyme a verse at a time, by the hundred gold offered. ${verses} of 9 heard.`,
           hint: ORACLES,
           open: { title: 'Radrion', text: said(VERSES.map((n) => `Radrion:${n}`)) },
         }
-      : mystery(ORACLES),
+      : mystery('rumours:radrion', ORACLES),
   ];
   return { lines, heard: pubs + (world.journal.radrion ? verses : 0), all: world.journal.radrion ? 18 : 9 };
 }
@@ -708,24 +717,33 @@ const MOONGATES =
 function equipment(world: World): { lines: JournalLine[]; done: number } {
   const j = world.journal;
   let done = 0;
-  const line = (name: string, found: boolean, before: string, after: string, hint: string): JournalLine => {
+  const line = (id: string, name: string, found: boolean, before: string, after: string, hint: string): JournalLine => {
     if (found) done++;
-    return { label: row(name, found ? 'done' : ''), name, about: found ? after : before, hint };
+    return { id, label: row(name, found ? 'done' : ''), name, about: found ? after : before, hint };
   };
   const gates = world.gatesKnown.length;
   if (gates === 8) done++;
   const moongates =
     gates > 0 || heardOf(world, (c) => !!c.reveals?.includes('moongates'))
       ? {
+          id: 'equipment:moongates',
           label: row('Moongates', `${gates}/8`),
           name: 'Moongates',
           about: `Come out of ${gates} of 8. One gate stands at a time, by the left moon; step in, and the right moon picks where you come out.`,
           hint: MOONGATES,
         }
-      : mystery(MOONGATES);
+      : mystery('equipment:moongates', MOONGATES);
   const lines = [
-    line('Supplies', j.guild, 'Find a guild to get adventuring supplies.', 'Found a guild: keys, torches, powders and gems.', GUILDS),
     line(
+      'equipment:supplies',
+      'Supplies',
+      j.guild,
+      'Find a guild to get adventuring supplies.',
+      'Found a guild: keys, torches, powders and gems.',
+      GUILDS,
+    ),
+    line(
+      'equipment:magic-weapons',
       'Magic Weapons',
       j.magicWeapons,
       'Find the shop that sells magic weapons.',
@@ -733,6 +751,7 @@ function equipment(world: World): { lines: JournalLine[]; done: number } {
       DAWN_SHOPS,
     ),
     line(
+      'equipment:magic-armour',
       'Magic Armour',
       j.magicArmour,
       'Find the shop that sells magic armour.',
@@ -740,6 +759,7 @@ function equipment(world: World): { lines: JournalLine[]; done: number } {
       DAWN_SHOPS,
     ),
     line(
+      'equipment:ships',
       'Ships',
       j.ship,
       'Acquire a ship...',
@@ -777,12 +797,15 @@ export function journalTop(world: World): JournalLine[] {
   const shrineLines = ambrosiaLines(world);
   const cards = shrineLines.filter((_, i) => holders(world, 1 << i).length > 0).length;
   const words = WORDS.map((w) =>
-    j.words.includes(w.word) ? { label: w.word, name: w.word, about: w.about, hint: w.hint } : mystery(w.hint, 'Not yet heard said.'),
+    j.words.includes(w.word)
+      ? { id: `word:${w.word}`, label: w.word, name: w.word, about: w.about, hint: w.hint }
+      : mystery(`word:${w.word}`, w.hint, 'Not yet heard said.'),
   );
   const reached = j.ambrosia || world.autoMap.hasMap(MapId.Ambrosia);
   const gear = equipment(world);
   return [
     {
+      id: 'section:quest',
       label: row('Main quest', `${stepsDone}/${STEPS.length}`),
       name: 'Main quest',
       about: 'All that stands between you and Exodus. After the king, in any order.',
@@ -790,6 +813,7 @@ export function journalTop(world: World): JournalLine[] {
       open: { title: 'Main quest', lines: steps },
     },
     {
+      id: 'section:towns',
       label: row('Towns', `${townsDone}/${TOWNS.length}`),
       name: 'Towns',
       about: "Lord British's castle and the ten towns, and the clues to be heard in each.",
@@ -797,6 +821,7 @@ export function journalTop(world: World): JournalLine[] {
       open: { title: 'Towns', lines: towns },
     },
     {
+      id: 'section:rumours',
       label: row('Rumours', `${told.heard}/${told.all}`),
       name: 'Rumours',
       about: 'What the pubs, and an oracle, will tell for gold.',
@@ -804,6 +829,7 @@ export function journalTop(world: World): JournalLine[] {
       open: { title: 'Rumours', lines: told.lines },
     },
     {
+      id: 'section:dungeons',
       label: row('Dungeons', `${dungeonsDone}/${DUNGEONS.length}`),
       name: 'Dungeons',
       about: 'Seven dungeons, each holding something the quest needs.',
@@ -812,14 +838,16 @@ export function journalTop(world: World): JournalLine[] {
     },
     ambrosiaKnown
       ? {
+          id: 'section:ambrosia',
           label: row('Ambrosia', `${cards}/4`),
           name: 'Ambrosia',
           about: reached ? `The lost land. ${cards} of its four shrines' cards held.` : 'The lost land. Heard of, not yet reached.',
           hint: ambrosiaHint,
           open: { title: 'Ambrosia', lines: shrineLines },
         }
-      : mystery(ambrosiaHint),
+      : mystery('section:ambrosia', ambrosiaHint),
     {
+      id: 'section:equipment',
       label: row('Equipment', `${gear.done}/${gear.lines.length}`),
       name: 'Equipment',
       about: 'What the party can go and get, beyond what it sets out with.',
@@ -827,6 +855,7 @@ export function journalTop(world: World): JournalLine[] {
       open: { title: 'Equipment', lines: gear.lines },
     },
     {
+      id: 'section:words',
       label: row('Words', `${words.filter((w) => w.label !== MYSTERY).length}/${words.length}`),
       name: 'Words',
       about: 'Words to say with Other (O), learnt from those who say them.',
@@ -834,6 +863,12 @@ export function journalTop(world: World): JournalLine[] {
       open: { title: 'Words', lines: words },
     },
   ];
+}
+
+/** Resolve only entries currently present in the journal, keeping its discovery rules intact. */
+export function journalEntry(world: World, id: string): JournalLine | null {
+  const flatten = (lines: JournalLine[]): JournalLine[] => lines.flatMap((line) => [line, ...flatten(line.open?.lines ?? [])]);
+  return flatten(journalTop(world)).find((line) => line.id === id) ?? null;
 }
 
 /** A line's card: its name, and what the party knows of it. */

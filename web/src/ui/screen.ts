@@ -13,14 +13,17 @@
  *                                (the Apple II used three rows and 4, 8, 12, 16;
  *                                this port pools gold and food, so the boxes
  *                                shrank and the message area grew)
- *   columns 24..39, rows 13..23  the scrolling message area; the prompt is
- *                                on row 23
+ *   columns 24..39, rows 13..23  the original scrolling message area; the prompt
+ *                                is on row 23
  *   row 0                        party gold, moon phases, party food;   row 23  wind
  *
  * Rendering is split in two: the border, text and stats are drawn straight
  * onto the canvas when they change, while the viewport is redrawn twelve
  * times a second from a cached `Viewport` so terrain and creatures animate.
  * In a dungeon the viewport shows the first-person view instead.
+ * With an available native companion, a larger world map replaces the boxes
+ * and upper history. Recent messages sit below the lower party panel; the upper
+ * screen retains the current command line and context while answering prompts.
  */
 
 import { GraphicsSet, type ImageMap } from './graphics.ts';
@@ -31,7 +34,7 @@ import { DungeonRenderer } from './dungeonView.ts';
 import { markerColour } from './display.ts';
 import { ScanlineOverlay } from './scanlines.ts';
 import { World, holdCombatMark, STARVATION_MODES, TIMER_MODES } from '../game/world.ts';
-import { PlayerRecord, levelUpDue, statusLetter } from '../game/player.ts';
+import { PlayerRecord, PlayerOffset, levelUpDue, statusLetter } from '../game/player.ts';
 import { commandMenu, hasMagic } from '../game/context.ts';
 import { memberShape } from '../game/combat.ts';
 import { TILE_SETS, helpPages, PAGE_ROWS, PAGE_WIDTH } from './help.ts';
@@ -43,8 +46,20 @@ import { buildViewport, VIEW_SIZE, VIEW_CENTRE, type Viewport } from '../game/vi
 import { buildDungeonView, secretMessage } from '../game/dungeon.ts';
 import { recordView, MAP_SIDE } from '../game/automap.ts';
 import { aroundParty, wholeLevel } from '../game/dungeonLayout.ts';
-import { mapPages, marksOn, stepMark, pageTitle, isLandValue, type MapPage, type MapMark, type Direction } from '../game/worldMap.ts';
-import { drawChart, drawPlaceSign } from './chart.ts';
+import { mapPages, marksOn, stepMark, pageTitle, type MapPage, type MapMark, type Direction } from '../game/worldMap.ts';
+import { drawPlaceSign } from './chart.ts';
+import { drawMapArt, LiveMapArt } from './mapArt.ts';
+import {
+  DEFAULT_MAP_ZOOM,
+  MAP_ZOOMS,
+  miniMapWindow,
+  miniMapPoint,
+  miniMapPieces,
+  persistentMapPosition,
+  validMapZoom,
+  type MapZoom,
+  type MapWindow,
+} from './persistentMap.ts';
 import { MapId } from '../data/resources.ts';
 import {
   Key,
@@ -59,7 +74,7 @@ import {
   type MenuPlacement,
   type SpellFlash,
 } from '../game/io.ts';
-import { cardWrap, gearName } from '../game/cards.ts';
+import { cardWrap } from '../game/cards.ts';
 import {
   controllerKeyFor,
   COMMAND_MENUS,
@@ -80,6 +95,17 @@ import {
   wrapText,
 } from './menus.ts';
 import { DungeonCell } from '../game/world.ts';
+import { memberPanelDetail, partyStatus, type PartyStatus, type PartyPanelLine } from './partyStatus.ts';
+import type { PinnedJournalHint } from './pinnedHint.ts';
+import type { CompanionThemePublisher } from './companionTheme.ts';
+import { firstUpperMessageRow, messageLines, MESSAGE_COLUMNS, MESSAGE_ROWS } from './messageLog.ts';
+import { CompanionView, companionView, dungeonViewMode } from './companionView.ts';
+import { fitDungeonLevel } from './dungeonPanel.ts';
+import { townMarks } from '../game/townMap.ts';
+import { paintTownMarks, TOWN_KEY } from './townPanel.ts';
+import { combatSummary } from '../game/combatSummary.ts';
+import { combatTurns } from '../game/combatTurns.ts';
+import { paintCombatPanel as drawCombatPanel } from './combatPanel.ts';
 
 export const COLUMNS = 40;
 export const ROWS = 24;
@@ -110,10 +136,15 @@ const PAGE_TOP = 1;
 const BOX_PITCH = 3;
 const BOX_SEPARATORS = [3, 6, 9, 12];
 const BOXES_BOTTOM = 12;
+/** The companion layout uses the column's full width, leaving six rows below for active prompts. */
+const PERSISTENT_MAP_SIDE = CARD_WIDTH;
+const PERSISTENT_MAP_BOTTOM = PERSISTENT_MAP_SIDE + 1;
 const TEXT_LEFT = 24;
 const TEXT_RIGHT = 40; // exclusive
 const TEXT_TOP = 13;
 const TEXT_BOTTOM = 24; // exclusive
+const PERSISTENT_MAP_LEFT = TEXT_LEFT + (CARD_WIDTH - PERSISTENT_MAP_SIDE) / 2;
+const PARTY_MARK_BLINK_MS = 350;
 
 const ANIMATION_INTERVAL_MS = 1000 / 12;
 
@@ -134,7 +165,7 @@ const TOP_DOWN_REACH = 10;
  * the command menu's bar is on Ztats, Ready weapon or Wear armour, the experience toward the next level, the weapon in
  * hand or the armour worn - kept through the command, its "Who?" with it.
  */
-type PanelLine = 'hp' | 'xp' | 'weapon' | 'armour';
+type PanelLine = PartyPanelLine;
 const PANEL_LINES: Partial<Record<string, PanelLine>> = { Z: 'xp', R: 'weapon', W: 'armour' };
 
 /** A card's lines by tone (cards.ts): better green, worse red, by the way grey, else white. */
@@ -208,12 +239,35 @@ export class Screen implements GameIO {
   private foldedThisTurn = 0;
   private brokenThisTurn = false;
   private linesSincePrompt = 0;
+  private messagePrompts = 0;
 
   /** Last values drawn in each stats box, to avoid redrawing every turn. */
   private statsCache: string[] = ['', '', '', ''];
   /** Member marked with arrows in the stats boxes while "Who?" is asked, or -1. */
   private selectedMember = -1;
   private highlighted = new Set<number>();
+  private flashingMembers = new Set<number>();
+  /** Optional companion output; the ordinary canvas remains the input and game owner. */
+  onPartyStatusChange: ((snapshot: PartyStatus) => void) | null = null;
+  pinnedJournalHint: PinnedJournalHint | null = null;
+  private companionAvailable = false;
+  private upperMap = false;
+  private companionViewState: CompanionView | null = null;
+  private readonly liveMapArt = new LiveMapArt();
+  private lastPanelFrame = -Infinity;
+  private miniMapZoom: MapZoom = DEFAULT_MAP_ZOOM;
+
+  get mapZoom(): MapZoom {
+    return this.miniMapZoom;
+  }
+
+  set mapZoom(value: MapZoom) {
+    const zoom = validMapZoom(value);
+    if (this.miniMapZoom === zoom) return;
+    this.miniMapZoom = zoom;
+    this.lastPanelFrame = -Infinity;
+    console.info(`Companion map: zoom ${zoom}x`);
+  }
   /** What each member's second line shows (`PanelLine`): hit points and mana, or what the command menu's bar is on. */
   private panelLine: PanelLine = 'hp';
   /** The card over the party panel while a list's item is highlighted (`showCard`), or null for the members. */
@@ -244,6 +298,7 @@ export class Screen implements GameIO {
   onSettingsChange: (() => void) | null = null;
   /** Name of the tile set in use (see help.ts TILE_SETS). */
   tileSetName = 'Standard';
+  companionTheme: CompanionThemePublisher | null = null;
   /** CRT lines laid over the whole game when the Scanlines setting is on (scanlines.ts). */
   private readonly crt: ScanlineOverlay;
   /** True while the Pause menu is up: it holds the game paused, and says so itself, so no PAUSED box. */
@@ -280,7 +335,7 @@ export class Screen implements GameIO {
     this.ctx = canvas.getContext('2d')!;
     this.ctx.imageSmoothingEnabled = false;
     this.cell = Math.floor(canvas.width / COLUMNS);
-    for (let r = 0; r < TEXT_BOTTOM - TEXT_TOP; r++) this.textRows.push(Array<string>(TEXT_RIGHT - TEXT_LEFT).fill(' '));
+    for (let r = 0; r < MESSAGE_ROWS; r++) this.textRows.push(Array<string>(MESSAGE_COLUMNS).fill(' '));
     this.dungeonRenderer = DungeonRenderer.forSet(gfx);
     this.crt = new ScanlineOverlay(canvas);
     // A pause holds the music and should not eat into a combat turn's timer. A window that loses focus pauses at
@@ -323,8 +378,20 @@ export class Screen implements GameIO {
 
   /** Draw the in-game border. (`DrawFrame(1)`) */
   showGameFrame(): void {
+    this.textRows.forEach((row) => row.fill(' '));
+    this.prevTurn = null;
+    this.thisTurn = { texts: [], rows: [] };
+    this.foldedThisTurn = 0;
+    this.brokenThisTurn = false;
+    this.linesSincePrompt = 0;
+    this.paintGameFrame();
+  }
+
+  /** A visual redraw preserves the log, cursor and repeat-folding state. */
+  private paintGameFrame(): void {
     this.viewCovered = false;
     this.frameShown = true;
+    this.upperMap = this.companionAvailable;
     this.black(0, 0, COLUMNS, ROWS);
     const piece = (n: number, x: number, y: number) => this.piece(n, x, y);
     for (let x = 1; x < 23; x++) {
@@ -342,15 +409,12 @@ export class Screen implements GameIO {
     piece(Piece.BottomRight, 23, 23);
     this.card = null;
     this.drawPanelFrame();
-    this.textRows.forEach((row) => row.fill(' '));
-    this.prevTurn = null;
-    this.thisTurn = { texts: [], rows: [] };
-    this.foldedThisTurn = 0;
     this.redrawTextArea();
     this.showWind();
     this.showMoons();
     this.statsCache = ['', '', '', ''];
     this.updateStats(true);
+    if (this.upperMap) this.paintCompanionPanel(performance.now());
     this.viewDirty = true;
   }
 
@@ -398,20 +462,191 @@ export class Screen implements GameIO {
     this.redrawAll();
   }
 
+  /** The native window, rather than device model or plugin presence, controls replacement of the status boxes. */
+  setCompanionAvailable(available: boolean): void {
+    if (this.companionAvailable === available) return;
+    this.companionAvailable = available;
+    console.info(available ? 'Companion layout enabled' : 'Companion layout: restoring upper-screen party status');
+  }
+
+  private paintUpperPanel(time: number): void {
+    if (!this.frameShown || this.card || this.viewCovered || this.upperPanelCovered() || this.overlay) return;
+    if (this.upperMap !== this.companionAvailable) {
+      this.upperMap = this.companionAvailable;
+      this.black(TEXT_LEFT, 0, CARD_WIDTH + 1, ROWS);
+      this.drawPanelFrame();
+      this.updateStats(true);
+      this.redrawTextArea();
+      this.lastPanelFrame = -Infinity;
+      this.viewDirty = true;
+    }
+    if (!this.upperMap || time - this.lastPanelFrame < ANIMATION_INTERVAL_MS) return;
+    this.paintCompanionPanel(time);
+  }
+
+  /** A left-side Pause/command menu can remain open while availability and map zoom update beside it. */
+  private upperPanelCovered(): boolean {
+    if (!this.menu) return false;
+    const bottom = this.menu.y + this.menu.visibleRows + 2;
+    const transitioning = this.upperMap !== this.companionAvailable;
+    const townKey = this.upperMap && !this.messagePrompts && companionView(this.world, this.upperMap) === CompanionView.TownMap;
+    const mapBottom = PERSISTENT_MAP_BOTTOM + (townKey ? TOWN_KEY.length : 0);
+    const panelBottom = transitioning ? ROWS - 1 : this.upperMap ? mapBottom : BOXES_BOTTOM;
+    const coversBox = this.menu.x + this.menu.width > TEXT_LEFT - 1 && this.menu.y <= panelBottom;
+    const coversHints = !!this.menu.hints && bottom <= panelBottom;
+    return coversBox || coversHints;
+  }
+
+  /** Draw once during full redraws too, so paused/menu-covered screens retain the map behind them. */
+  private paintCompanionPanel(time: number): void {
+    this.lastPanelFrame = time;
+    const view = companionView(this.world, this.upperMap);
+    if (view !== this.companionViewState) {
+      this.companionViewState = view;
+      this.viewDirty = true;
+      console.info(`Companion view: ${view}`);
+      this.redrawTextArea();
+    }
+    if (view === CompanionView.DungeonMap) {
+      this.paintDungeonPanel();
+      return;
+    }
+    if (view === CompanionView.TownMap) {
+      this.paintTownPanel(time);
+      return;
+    }
+    if (view === CompanionView.Combat) {
+      this.paintCombatPanel();
+      return;
+    }
+    const { ctx, cell, world } = this;
+    const position = persistentMapPosition(world);
+    const window = miniMapWindow(position, this.mapZoom);
+    const size = PERSISTENT_MAP_SIDE * cell;
+    const left = PERSISTENT_MAP_LEFT * cell;
+    const top = cell;
+    const square = size / window.side;
+    this.black(TEXT_LEFT, 1, CARD_WIDTH, PERSISTENT_MAP_SIDE);
+    this.paintCompanionTitle(`${pageTitle(world, { kind: 'map', id: position.id })} ${this.mapZoom}x`);
+    const marks = marksOn(world, { kind: 'map', id: position.id });
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, size, size);
+    ctx.clip();
+    const art = this.liveMapArt.read(world, this.gfx, position.id, size * this.mapZoom, time);
+    this.paintMapCrop(art, window, left, top, square);
+    for (const mark of marks) this.paintPassiveMark(mark, window, left, top, square);
+    this.paintMapParty(window, position.x, position.y, left, top, square, time);
+    ctx.restore();
+  }
+
+  private paintCompanionTitle(label: string): void {
+    for (let x = TEXT_LEFT; x < TEXT_RIGHT - 1; x++) this.piece(Piece.Horizontal, x, 0);
+    const title = label.slice(0, CARD_WIDTH);
+    this.drawText(title, TEXT_LEFT + Math.floor((CARD_WIDTH - title.length) / 2), 0);
+  }
+
+  private paintDungeonPanel(): void {
+    const level = wholeLevel(this.world);
+    const target = fitDungeonLevel(level, {
+      left: PERSISTENT_MAP_LEFT * this.cell,
+      top: this.cell,
+      side: PERSISTENT_MAP_SIDE * this.cell,
+    });
+    this.black(TEXT_LEFT, 1, CARD_WIDTH, PERSISTENT_MAP_SIDE);
+    this.paintCompanionTitle(`Level ${this.world.dungeon.level + 1} map`);
+    this.paintAutoMap((x, y) => level.at(x, y), [0, 0], [level.cols, level.rows], [target.left, target.top], level.party, target.square);
+  }
+
+  private paintTownPanel(time: number): void {
+    const { world, cell, ctx } = this;
+    const bounds = { left: PERSISTENT_MAP_LEFT * cell, top: cell, side: PERSISTENT_MAP_SIDE * cell, cell };
+    this.black(TEXT_LEFT, 1, CARD_WIDTH, PERSISTENT_MAP_SIDE);
+    this.paintCompanionTitle(pageTitle(world, { kind: 'map', id: world.current.id }));
+    ctx.drawImage(this.liveMapArt.read(world, this.gfx, world.current.id, bounds.side, time), bounds.left, bounds.top);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bounds.left, bounds.top, bounds.side, bounds.side);
+    ctx.clip();
+    paintTownMarks(ctx, this.gfx, townMarks(world), bounds);
+    this.paintMapParty({ left: 0, top: 0, side: MAP_SIDE }, world.x, world.y, bounds.left, bounds.top, bounds.side / MAP_SIDE, time);
+    ctx.restore();
+  }
+
+  private paintCombatPanel(): void {
+    const summary = combatSummary(this.world);
+    const turns = combatTurns(this.world);
+    if (!summary || !turns) return;
+    const { cell, ctx } = this;
+    const bounds = { left: PERSISTENT_MAP_LEFT * cell, top: cell, side: PERSISTENT_MAP_SIDE * cell, cell };
+    this.black(TEXT_LEFT, 1, CARD_WIDTH, PERSISTENT_MAP_SIDE);
+    this.paintCompanionTitle('Turn order');
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bounds.left, bounds.top, bounds.side, bounds.side);
+    ctx.clip();
+    drawCombatPanel(ctx, this.gfx, summary, turns, bounds);
+    ctx.restore();
+  }
+
+  private paintMapCrop(art: HTMLCanvasElement, window: MapWindow, left: number, top: number, square: number): void {
+    const sourceSquare = art.width / MAP_SIDE;
+    for (const piece of miniMapPieces(window)) {
+      this.ctx.drawImage(
+        art,
+        piece.sx * sourceSquare,
+        piece.sy * sourceSquare,
+        piece.width * sourceSquare,
+        piece.height * sourceSquare,
+        left + piece.dx * square,
+        top + piece.dy * square,
+        piece.width * square,
+        piece.height * square,
+      );
+    }
+  }
+
+  private paintMapParty(window: MapWindow, partyX: number, partyY: number, left: number, top: number, square: number, time: number): void {
+    if (Math.floor(time / PARTY_MARK_BLINK_MS) % 2 !== 0) return;
+    const { ctx, cell } = this;
+    const point = miniMapPoint(window, partyX, partyY)!;
+    const markerSize = Math.max(square, ((PERSISTENT_MAP_SIDE * cell) / MAP_SIDE) * 3);
+    const x = left + (point.x + 0.5) * square - markerSize / 2;
+    const y = top + (point.y + 0.5) * square - markerSize / 2;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = Math.max(3, cell / 10);
+    ctx.strokeRect(x, y, markerSize, markerSize);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(1, cell / 20);
+    ctx.strokeRect(x, y, markerSize, markerSize);
+  }
+
+  private paintPassiveMark(mark: MapMark, window: MapWindow, left: number, top: number, square: number): void {
+    const point = miniMapPoint(window, mark.x, mark.y);
+    if (!point) return;
+    const x = left + (point.x + 0.5) * square;
+    const y = top + (point.y + 0.5) * square;
+    if (mark.unseen) drawPlaceSign(this.ctx, x, y, square, mark.kind === 'castle');
+    if (mark.kind === 'moongate' && mark.phase !== undefined) this.drawMoonMark(x, y, square * 0.9, mark.phase);
+  }
+
   /** The frame round the party panel: its top, the separators between the members' boxes with their numbers, its sides. */
   private drawPanelFrame(): void {
+    const bottom = this.upperMap ? PERSISTENT_MAP_BOTTOM : BOXES_BOTTOM;
     const piece = (n: number, x: number, y: number) => this.piece(n, x, y);
+    piece(Piece.TopRight, 39, 0);
     for (let x = 24; x < 39; x++) {
       piece(Piece.Horizontal, x, 0);
-      for (const y of BOX_SEPARATORS) piece(Piece.Horizontal, x, y);
+      for (const y of this.upperMap ? [bottom] : BOX_SEPARATORS) piece(Piece.Horizontal, x, y);
     }
-    for (let y = 1; y < BOXES_BOTTOM; y++) {
+    for (let y = 1; y < ROWS - 1; y++) {
       piece(Piece.Vertical, 23, y);
-      piece(Piece.Vertical, 39, y);
+      if (y < bottom) piece(Piece.Vertical, 39, y);
     }
-    for (const y of BOX_SEPARATORS) piece(Piece.LeftTee, 23, y);
-    for (const y of BOX_SEPARATORS.slice(0, 3)) piece(Piece.RightTee, 39, y);
-    piece(Piece.BottomRight, 39, BOXES_BOTTOM);
+    for (const y of this.upperMap ? [bottom] : BOX_SEPARATORS) piece(Piece.LeftTee, 23, y);
+    if (!this.upperMap) BOX_SEPARATORS.slice(0, 3).forEach((y) => piece(Piece.RightTee, 39, y));
+    piece(Piece.BottomRight, 39, bottom);
+    if (this.upperMap) return;
     // Member numbers 1-4 sit in the separators above each box.
     for (let i = 0; i < 4; i++) {
       piece(Piece.CapLeft, 30, i * BOX_PITCH);
@@ -429,8 +664,10 @@ export class Screen implements GameIO {
     if (!this.frameShown || (!card && !this.card)) return;
     this.card = card;
     if (!card) {
+      this.black(24, 1, CARD_WIDTH, this.upperMap ? PERSISTENT_MAP_SIDE : CARD_ROWS);
       this.drawPanelFrame();
       this.updateStats(true);
+      if (this.upperMap) this.paintCompanionPanel(performance.now());
       return;
     }
     for (const y of BOX_SEPARATORS.slice(0, 3)) {
@@ -447,7 +684,7 @@ export class Screen implements GameIO {
     }
     this.black(tx, 0, title.length, 1);
     this.drawText(title, tx, 0);
-    this.black(24, 1, CARD_WIDTH, CARD_ROWS);
+    this.black(24, 1, CARD_WIDTH, this.upperMap ? PERSISTENT_MAP_SIDE : CARD_ROWS);
     card.lines.slice(0, CARD_ROWS).forEach((line, i) => {
       this.drawText(line.text.slice(0, CARD_WIDTH), 24, 1 + i, line.tone ? CARD_TONES[line.tone] : undefined);
     });
@@ -463,15 +700,8 @@ export class Screen implements GameIO {
   /** Redraw the whole screen from what the Screen already knows (after a tile change or a full-screen page). */
   private redrawAll(): void {
     if (this.frameShown) {
-      const rows = this.textRows.map((r) => [...r]);
-      const cx = this.cursorX;
-      const cy = this.cursorY;
-      this.showGameFrame();
-      this.textRows = rows;
-      this.cursorX = cx;
-      this.cursorY = cy;
-      this.redrawTextArea();
-      this.highlighted.forEach((m) => this.invert(24, m * BOX_PITCH + 1, 15, BOX_ROWS));
+      this.paintGameFrame();
+      if (!this.upperMap) this.highlighted.forEach((m) => this.invert(24, m * BOX_PITCH + 1, 15, BOX_ROWS));
     } else {
       const texts = this.titleText;
       this.showTitle();
@@ -519,7 +749,35 @@ export class Screen implements GameIO {
   }
 
   private redrawTextArea(): void {
-    for (let r = 0; r < this.textRows.length; r++) this.drawText(this.textRows[r].join(''), TEXT_LEFT, TEXT_TOP + r);
+    if (this.upperMap) this.black(TEXT_LEFT, PERSISTENT_MAP_BOTTOM + 1, MESSAGE_COLUMNS, ROWS - PERSISTENT_MAP_BOTTOM - 1);
+    for (let r = this.firstMessageRow; r < this.textRows.length; r++) this.paintMessageRow(r);
+    this.paintTownKey();
+  }
+
+  private paintTownKey(): void {
+    if (!this.upperMap || this.messagePrompts || this.companionViewState !== CompanionView.TownMap) return;
+    TOWN_KEY.forEach((line, index) => this.drawText(line, TEXT_LEFT, PERSISTENT_MAP_BOTTOM + 1 + index));
+  }
+
+  private get firstMessageRow(): number {
+    return firstUpperMessageRow(this.upperMap, this.messagePrompts > 0);
+  }
+
+  private paintMessageRow(row: number): void {
+    if (row < this.firstMessageRow) return;
+    this.drawText(this.textRows[row].join(''), TEXT_LEFT, TEXT_TOP + row);
+  }
+
+  private async withMessagePrompt<T>(read: () => Promise<T>): Promise<T> {
+    if (!this.frameShown) return read();
+    this.messagePrompts++;
+    if (this.messagePrompts === 1) this.redrawTextArea();
+    try {
+      return await read();
+    } finally {
+      this.messagePrompts--;
+      if (this.messagePrompts === 0 && this.frameShown) this.redrawTextArea();
+    }
   }
 
   /** Scroll the message area up one line. (`UTextScroll`) */
@@ -550,7 +808,7 @@ export class Screen implements GameIO {
       if (ch < ' ') continue;
       if (this.cursorX >= TEXT_RIGHT) continue; // the original simply ran off the edge
       this.textRows[this.cursorY - TEXT_TOP][this.cursorX - TEXT_LEFT] = ch;
-      this.drawText(ch, this.cursorX, this.cursorY);
+      if (this.cursorY - TEXT_TOP >= this.firstMessageRow) this.drawText(ch, this.cursorX, this.cursorY);
       this.cursorX++;
     }
   }
@@ -569,7 +827,7 @@ export class Screen implements GameIO {
     const width = TEXT_RIGHT - TEXT_LEFT;
     const padded = text.slice(0, width).padEnd(width);
     this.textRows[row] = padded.split('');
-    this.drawText(padded, TEXT_LEFT, TEXT_TOP + row);
+    this.paintMessageRow(row);
   }
 
   private countLabel(text: string, count: number): string {
@@ -673,11 +931,11 @@ export class Screen implements GameIO {
   }
 
   async waitKey(): Promise<string> {
-    return (await this.readKey()) as string;
+    return (await this.withMessagePrompt(() => this.readKey())) as string;
   }
 
   waitKeyOrTimeout(ms: number): Promise<string | null> {
-    return this.readKey(ms);
+    return this.withMessagePrompt(() => this.readKey(ms));
   }
 
   flushKeys(): void {
@@ -934,10 +1192,12 @@ export class Screen implements GameIO {
       () => [
         { key: 'T', label: `Tiles: ${this.tileSetName}` },
         { key: 'L', label: `Scanlines: ${onOff(this.scanlines)}` },
+        ...(this.pinnedJournalHint ? [{ key: 'M', label: `Minimap zoom: ${this.mapZoom}x` }] : []),
       ],
       async (key) => {
         if (key === 'T') await this.chooseTiles();
         else if (key === 'L') this.scanlines = !this.scanlines;
+        else if (key === 'M') this.mapZoom = MAP_ZOOMS[(MAP_ZOOMS.indexOf(this.mapZoom) + 1) % MAP_ZOOMS.length];
       },
     );
   }
@@ -1166,7 +1426,8 @@ export class Screen implements GameIO {
    * dungeons, Ambrosia, the words - each opening to its own lines, and a town or a main-quest step to what was heard
    * there or of it. Up and Down move the cursor (the page scrolls to keep it in view), A (Enter, Right) opens, B
    * (Backspace, Left) comes back and on the top closes, Escape closes; Y (H) prints the line's hint to the message
-   * area. The highlighted line's card - what the party knows of it - stands over the party panel. What was shown is
+   * area. In the companion build, X (P on keyboard) toggles a persistent pin for that line's hint. The highlighted
+   * line's card - what the party knows of it - stands over the party panel. What was shown is
    * noted on closing, so "Journal updated" only marks real change.
    */
   async showJournal(): Promise<void> {
@@ -1192,8 +1453,9 @@ export class Screen implements GameIO {
         }
         const opens = !!line?.open && !!level.lines;
         const inner = stack.length > 1;
-        // Only the hint's key: opening and backing out are as in every list.
-        const footer = [controller ? 'Y hint' : 'H hint', ''];
+        const pinned = line?.id === this.pinnedJournalHint?.id;
+        const pinAction = pinned ? 'unpin' : 'pin';
+        const footer = [controller ? 'Y hint' : 'H hint', this.pinnedJournalHint ? `${controller ? 'X' : 'P'} ${pinAction}` : ''];
         const note = !level.lines && rows.length > PAGE_ROWS ? 'Up/Down: scroll' : '';
         this.drawPage(level.title, rows.slice(level.top), footer, note, cursor);
         this.showCard(line ? journalCard(line) : null);
@@ -1211,6 +1473,7 @@ export class Screen implements GameIO {
           const open = opens ? line?.open : undefined;
           if (open) stack.push({ title: open.title, lines: open.lines, text: open.text, from: line, selected: 0, top: 0 });
         } else if (line && (key === Key.Y || key === 'h' || key === 'H')) this.printWrapped(line.hint);
+        else if (line && (key === Key.X || key === 'p' || key === 'P')) this.pinnedJournalHint?.toggle(line.id);
       }
     } finally {
       this.showCard(null);
@@ -1295,7 +1558,7 @@ export class Screen implements GameIO {
       page = next;
       marks = marksOn(world, page);
       selected = 0;
-      art = page.kind === 'map' ? this.mapArt(page.id) : null;
+      art = page.kind === 'map' ? drawMapArt(world, this.gfx, page.id, 22 * this.cell) : null;
     };
     show(page);
     this.overlay = (time) =>
@@ -1339,35 +1602,6 @@ export class Screen implements GameIO {
     }
   }
 
-  /**
-   * A map page's picture, drawn once as the page opens: what the party has seen of the map, square by square in the
-   * tile set's tiles (the ground under anyone standing on it), over Sosaria's chart or, elsewhere, the dark.
-   */
-  private mapArt(id: number): HTMLCanvasElement {
-    const { world } = this;
-    const sq = (22 * this.cell) / MAP_SIDE;
-    const art = document.createElement('canvas');
-    art.width = art.height = Math.round(sq * MAP_SIDE);
-    const c = art.getContext('2d')!;
-    const state = id === MapId.Sosaria ? world.surface : id === world.current.id ? world.current : world.loadMapState(id);
-    if (id === MapId.Sosaria) {
-      const raw = world.resources.maps.get(id);
-      drawChart(c, sq, (x, y) => !!raw && isLandValue(raw[1 + y * MAP_SIDE + x]));
-    } else {
-      c.fillStyle = '#000';
-      c.fillRect(0, 0, art.width, art.height);
-    }
-    for (let y = 0; y < MAP_SIDE; y++) {
-      for (let x = 0; x < MAP_SIDE; x++) {
-        if (!world.autoMap.squareSeen(id, x, y)) continue;
-        const someone = state.monsters.at(x, y);
-        const value = someone >= 0 ? state.monsters.tileUnder(someone) : state.tiles[y * MAP_SIDE + x];
-        this.gfx.drawShape(c, (value >> 2) * 2, x * sq, y * sq, sq);
-      }
-    }
-    return art;
-  }
-
   /** One frame of the map: the page, its marks and the cursor, and the legend beside it. */
   private paintWorldMap(
     page: MapPage,
@@ -1407,7 +1641,7 @@ export class Screen implements GameIO {
     }
     // The party, blinking.
     const party = marks.find((m) => m.kind === 'party' || m.party);
-    if (party && Math.floor(time / 350) % 2 === 0) {
+    if (party && Math.floor(time / PARTY_MARK_BLINK_MS) % 2 === 0) {
       const [x, y] = corner(party);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = Math.max(2, sq / 5);
@@ -1758,6 +1992,10 @@ export class Screen implements GameIO {
   }
 
   async chooseOption(options: MenuOption[], echo: 'none' | 'key' | 'line', place?: MenuPlacement): Promise<string> {
+    return this.withMessagePrompt(() => this.readOption(options, echo, place));
+  }
+
+  private async readOption(options: MenuOption[], echo: 'none' | 'key' | 'line', place?: MenuPlacement): Promise<string> {
     let key = '';
     for (;;) {
       if (this.promptMode === 'controller') {
@@ -1813,15 +2051,28 @@ export class Screen implements GameIO {
   }
 
   async inputText(maxChars: number, numbersOnly: boolean, words?: string[]): Promise<string> {
+    return this.withMessagePrompt(() => this.inputMessageText(maxChars, numbersOnly, words));
+  }
+
+  private async inputMessageText(maxChars: number, numbersOnly: boolean, words?: string[]): Promise<string> {
     const x = this.cursorX;
     const y = this.cursorY;
     let result: string;
     if (this.inputMode === 'controller') result = await this.controllerInput(maxChars, numbersOnly, words);
-    else result = await this.readLine(x, y, maxChars, numbersOnly, (s) => this.drawText((s + '   ').slice(0, maxChars + 1), x, y));
+    else result = await this.readLine(x, y, maxChars, numbersOnly, (s) => this.echoMessageInput(s, x, y, maxChars));
     // Leave the typed text in the message buffer and move the cursor past it.
     this.cursorX = x;
     this.print(result);
     return result;
+  }
+
+  /** Keep unfinished input in the same buffer so companion updates and display fallback can repaint it. */
+  private echoMessageInput(text: string, x: number, y: number, maxChars: number): void {
+    const count = Math.min(maxChars + 1, TEXT_RIGHT - x);
+    const echo = text.padEnd(count).slice(0, count);
+    const row = y - TEXT_TOP;
+    this.textRows[row].splice(x - TEXT_LEFT, count, ...echo);
+    this.paintMessageRow(row);
   }
 
   async inputTextAt(x: number, y: number, maxChars: number, numbersOnly: boolean): Promise<string> {
@@ -1996,7 +2247,8 @@ export class Screen implements GameIO {
   private paintViewport(): void {
     const { ctx, cell, gfx, world } = this;
     const inDungeon = world.party.location === Location.Dungeon && !world.combat;
-    const overlay = inDungeon && world.mapMode !== 'off'; // small: the 5x5 map; full: the small first-person view
+    const mode = dungeonViewMode(world, this.upperMap);
+    const overlay = inDungeon && mode !== 'off'; // legacy single-screen overlay only
     if (this.overlayShown && !overlay) {
       // The overlay has gone: bring back the text it was covering.
       this.overlayShown = false;
@@ -2005,7 +2257,7 @@ export class Screen implements GameIO {
     if (inDungeon) {
       const lit = world.dungeon.torch > 0 && this.dungeonRenderer;
       const view = lit ? this.dungeonRenderer!.render(buildDungeonView(world), world.dungeon.torch, secretMessage(world)) : null;
-      if (world.mapMode === 'full') {
+      if (mode === 'full') {
         // The level fills the window; the first-person view shrinks into the overlay slot.
         this.overlayShown = true;
         this.black(1, 1, 22, 22);
@@ -2201,6 +2453,8 @@ export class Screen implements GameIO {
   }
 
   private frame(time: number): void {
+    this.companionTheme?.update(this.gfx, this.tileSetName, this.scanlines);
+    if (this.onPartyStatusChange) this.onPartyStatusChange(this.partyStatus());
     // Read the pads in a task of their own, as the keyboard's events arrive. A press pushed inside this frame would
     // run the game's turn after the frame's repaint but before the browser paints, so a view the turn blanks (a
     // dark dungeon clears it every turn) would show black for a frame. Ahead of the early returns, so a pad can
@@ -2217,6 +2471,7 @@ export class Screen implements GameIO {
       requestAnimationFrame((t) => this.frame(t));
       return;
     }
+    this.paintUpperPanel(time);
     if (this.overlay) {
       this.overlay(time);
       requestAnimationFrame((t) => this.frame(t));
@@ -2287,24 +2542,25 @@ export class Screen implements GameIO {
     [w, h]: [number, number],
     [left, top]: [number, number],
     party: [number, number],
+    square = this.cell,
   ): void {
-    const { ctx, cell, world } = this;
+    const { ctx, world } = this;
     ctx.fillStyle = '#000';
-    ctx.fillRect(left, top, w * cell, h * cell);
-    for (let row = 0; row < h; row++) {
-      for (let col = 0; col < w; col++) {
-        const c = at(i0 + col, j0 + row);
-        if (c < 0) continue;
-        const [dx, dy] = [left + col * cell, top + row * cell];
-        const value = world.getXYDng(c & 0x0f, c >> 4);
-        if (value === DungeonCell.SecretDoor) ctx.drawImage(this.secretDoor(), dx, dy, cell, cell);
-        else this.gfx.drawUiPiece(ctx, DUNGEON_MAP_PIECE_COLUMN + dungeonMapPiece(value), 1, dx, dy, cell);
-      }
+    ctx.fillRect(left, top, w * square, h * square);
+    for (let index = 0; index < w * h; index++) {
+      const col = index % w;
+      const row = Math.floor(index / w);
+      const c = at(i0 + col, j0 + row);
+      if (c < 0) continue;
+      const [dx, dy] = [left + col * square, top + row * square];
+      const value = world.getXYDng(c & 0x0f, c >> 4);
+      if (value === DungeonCell.SecretDoor) ctx.drawImage(this.secretDoor(), dx, dy, square, square);
+      else this.gfx.drawUiPiece(ctx, DUNGEON_MAP_PIECE_COLUMN + dungeonMapPiece(value), 1, dx, dy, square);
     }
     const [col, row] = [party[0] - i0, party[1] - j0];
     const leader = this.livingLeader();
     if (leader !== undefined && col >= 0 && col < w && row >= 0 && row < h) {
-      this.drawMember(leader, left + col * cell, top + row * cell, cell);
+      this.drawMember(leader, left + col * square, top + row * square, square);
     }
   }
 
@@ -2467,6 +2723,10 @@ export class Screen implements GameIO {
    * worn (`PanelLine`). Under a card (`showCard`) nothing is drawn.
    */
   updateStats(force = false): void {
+    if (this.upperMap) {
+      this.showMoons();
+      return;
+    }
     if (this.card) {
       this.statsCache = ['', '', '', ''];
       this.showMoons();
@@ -2479,7 +2739,7 @@ export class Screen implements GameIO {
       const selected = m === this.selectedMember;
       const line = this.panelLine;
       const key = p
-        ? `${p.name}|${p.status}|${due}|${p.hitPoints}|${p.maxHitPoints}|${p.mana}|${selected}|${line}|${p.bytes[30]}|${p.bytes[31]}|${p.bytes[48]}|${p.bytes[40]}`
+        ? `${p.name}|${p.status}|${due}|${p.hitPoints}|${p.maxHitPoints}|${p.mana}|${selected}|${line}|${p.level}|${p.experience}|${p.bytes[PlayerOffset.WeaponReadied]}|${p.bytes[PlayerOffset.ArmourWorn]}`
         : '';
       if (!force && key === this.statsCache[m]) continue;
       this.statsCache[m] = key;
@@ -2510,14 +2770,9 @@ export class Screen implements GameIO {
         this.drawText(p.name, 24, top, nameColour);
         if (classic) this.drawText(statusLetter(p), 38, top);
         const gone = p.status === 'D' || p.status === 'A';
-        if (this.panelLine === 'xp') {
-          // Experience counts a level every hundred, to 9899 (actions.ts addExperience).
-          const xp = p.bytes[30] * 100 + p.bytes[31];
-          const next = xp >= 9899 ? ' MAX' : `/${(p.bytes[30] + 1) * 100}`;
-          this.drawText(`XP ${xp}${next}`, 24, top + 1, classic ? undefined : gone ? nameColour : due ? memberColour(p, due) : undefined);
-        } else if (this.panelLine !== 'hp') {
-          const weapon = this.panelLine === 'weapon';
-          this.drawText(gearName(this.world, weapon, p.bytes[weapon ? 48 : 40]), 24, top + 1, gone && !classic ? nameColour : undefined);
+        if (this.panelLine !== 'hp') {
+          const colour = classic ? undefined : gone ? nameColour : this.panelLine === 'xp' && due ? memberColour(p, due) : undefined;
+          this.drawText(memberPanelDetail(this.world, p, this.panelLine), 24, top + 1, colour);
         } else {
           const hp = p.hitPoints;
           const max = Math.max(1, p.maxHitPoints);
@@ -2535,6 +2790,19 @@ export class Screen implements GameIO {
   }
 
   async flashMember(member: number): Promise<void> {
+    this.flashingMembers.add(member);
+    try {
+      await this.flashMemberBox(member);
+    } finally {
+      this.flashingMembers.delete(member);
+    }
+  }
+
+  private async flashMemberBox(member: number): Promise<void> {
+    if (this.upperMap) {
+      await this.pause(100); // retain the lower-screen damage flash without inverting map pixels
+      return;
+    }
     if (this.card) return; // under a card the boxes are not there to flash
     const top = member * BOX_PITCH + 1;
     this.invert(24, top, 15, BOX_ROWS);
@@ -2542,11 +2810,25 @@ export class Screen implements GameIO {
     this.invert(24, top, 15, BOX_ROWS);
   }
 
+  /** Include UI selection/feedback even when a menu's card covers the ordinary stats boxes. */
+  partyStatus(): PartyStatus {
+    return partyStatus(this.world, {
+      playing: this.frameShown,
+      paused: this.keyboard.paused,
+      selectedMember: this.selectedMember,
+      highlighted: this.highlighted,
+      flashing: this.flashingMembers,
+      hint: this.pinnedJournalHint?.read() ?? null,
+      line: this.panelLine,
+      log: messageLines(this.textRows, this.frameShown),
+    });
+  }
+
   highlightMember(member: number, on: boolean): void {
     if (this.highlighted.has(member) === on) return;
     if (on) this.highlighted.add(member);
     else this.highlighted.delete(member);
-    if (!this.card) this.invert(24, member * BOX_PITCH + 1, 15, BOX_ROWS); // a card puts it back as it goes
+    if (!this.card && !this.upperMap) this.invert(24, member * BOX_PITCH + 1, 15, BOX_ROWS); // a card puts it back as it goes
   }
 
   /** Wind indicator on the bottom border, or the heading in a dungeon. (`ShowWind`, `DngInfo`) */

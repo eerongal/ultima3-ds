@@ -22,6 +22,7 @@ import { Random } from './random.ts';
 import { MapValue } from './tiles.ts';
 import { type JournalState, emptyJournal } from './journal.ts';
 import { speech } from './talk.ts';
+import type { CombatProgress } from './combatTurns.ts';
 
 /** A loaded map plus the creatures living on it. */
 export interface MapState {
@@ -96,6 +97,8 @@ const MAP_SLIPS: { id: number; x: number; y: number; wrong: number; right: numbe
 
 /** The state of a fight. See combat.ts. */
 export interface CombatState {
+  /** Actual combat phase for read-only turn displays; older/test snapshots may omit it. */
+  progress?: CombatProgress;
   /** 11x11 arena shapes (same numbering as the viewport). */
   tiles: Uint8Array;
   monsters: Combatant[];

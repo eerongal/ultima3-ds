@@ -38,7 +38,12 @@ import { fullScreen } from './ui/fullScreen.ts';
 import { bootHold } from './ui/bootHold.ts';
 import { MusicPlayer } from './ui/music.ts';
 import { Screen } from './ui/screen.ts';
+import { PartyStatusPublisher } from './ui/partyStatus.ts';
+import { CompanionThemePublisher } from './ui/companionTheme.ts';
+import { watchCompanion, type NativeCompanion } from './ui/companion.ts';
+import { PinnedJournalHint } from './ui/pinnedHint.ts';
 import { TILE_SETS } from './ui/help.ts';
+import { DEFAULT_MAP_ZOOM, validMapZoom, type MapZoom } from './ui/persistentMap.ts';
 
 const PREFS_KEY = 'ultima3.settings';
 
@@ -62,6 +67,7 @@ interface Prefs {
   /** The Music level, 0 to LEVELS; LEVELS is how loud the music always was. */
   musicLevel: number;
   dungeonMap: MapMode;
+  mapZoom: MapZoom;
   /** The virtual controller shown; on first visit, shown on a touch screen. */
   touchPad: boolean;
 }
@@ -81,6 +87,7 @@ const DEFAULT_PREFS: Prefs = {
   music: true,
   musicLevel: LEVELS,
   dungeonMap: 'off',
+  mapZoom: DEFAULT_MAP_ZOOM,
   touchPad: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
 };
 
@@ -95,6 +102,7 @@ function loadPrefs(): Prefs {
     if (typeof prefs.scanlines !== 'boolean') prefs.scanlines = DEFAULT_PREFS.scanlines;
     if (prefs.inputMode !== 'keyboard') prefs.inputMode = DEFAULT_PREFS.inputMode;
     if (!MAP_MODES.includes(prefs.dungeonMap)) prefs.dungeonMap = 'off';
+    prefs.mapZoom = validMapZoom(prefs.mapZoom);
     if (!STARVATION_MODES.includes(prefs.starvation)) prefs.starvation = 'mild';
     if (!TIMER_MODES.includes(prefs.timer)) prefs.timer = 'fast';
     if (!SOUND_SETS.includes(prefs.soundSet)) prefs.soundSet = 'Standard';
@@ -212,7 +220,7 @@ async function start(): Promise<void> {
   // A newer release for the apps (updates.ts), asked for now so the answer is in by the title: the desktop app's main
   // process asks GitHub; the Android app (its Quit plugin is how it is known) asks from here, its version built in.
   const native = (window as { u3native?: NativeUpdates }).u3native;
-  const plugins = (window as { Capacitor?: { Plugins?: { Quit?: NativeQuit } } }).Capacitor?.Plugins;
+  const plugins = (window as { Capacitor?: { Plugins?: { Quit?: NativeQuit; PartyStatus?: NativeCompanion } } }).Capacitor?.Plugins;
   const appVersion = import.meta.env.VITE_APP_VERSION as string | undefined;
   const releaseOffer: Promise<ReleaseOffer | null> = native
     ? native.updateOffer()
@@ -261,10 +269,19 @@ async function start(): Promise<void> {
   window.addEventListener('pointerdown', unlockAudio);
 
   const screen = new Screen(canvas, gfx, images, keyboard, sounds, music, world);
+  if (plugins?.PartyStatus) {
+    screen.pinnedJournalHint = new PinnedJournalHint(world);
+    const companion = new PartyStatusPublisher(plugins.PartyStatus);
+    screen.onPartyStatusChange = (snapshot) => companion.update(snapshot);
+    screen.companionTheme = new CompanionThemePublisher(plugins.PartyStatus);
+    void watchCompanion(plugins.PartyStatus, (available) => screen.setCompanionAvailable(available));
+    console.info('Party status: companion bridge connected');
+  }
   // ?controller starts in controller mode whatever was remembered (a Steam shortcut, a kiosk).
   screen.inputMode = params.has('controller') ? 'controller' : prefs.inputMode;
   screen.tileSetName = tiles;
   screen.scanlines = prefs.scanlines;
+  screen.mapZoom = prefs.mapZoom;
   canvas.focus();
 
   // Whatever changes a setting (the menu, a gamepad press, Escape in a fight), remember it.
@@ -286,6 +303,7 @@ async function start(): Promise<void> {
       music: music.enabled,
       musicLevel: music.level,
       dungeonMap: world.mapMode,
+      mapZoom: screen.mapZoom,
       touchPad: prefs.touchPad,
     });
   };

@@ -26,6 +26,7 @@ import { BASERES } from '../data/resources.ts';
 import { checkAllDead } from './death.ts';
 import { VIEW_SIZE } from './viewport.ts';
 import { autoCombatKeys } from './autocombat.ts';
+import { CombatPhase } from './combatTurns.ts';
 
 /** Messages used by combat (1-based Messages table entries). */
 const Msg = {
@@ -122,6 +123,7 @@ export function loadArena(world: World, id: number): CombatState {
     members.push({ x, y, tileUnder: raw[0xa8 + i], shape: raw[0xac + i], hp: 0, start: { x, y } });
   }
   return {
+    progress: { phase: CombatPhase.Preparing, member: 0 },
     tiles,
     monsters,
     members,
@@ -370,14 +372,16 @@ export async function combat(world: World, io: GameIO, monsterShape: number, var
   try {
     for (;;) {
       // A new round: everyone ages, then each member acts.
+      c.progress = { phase: CombatPhase.Preparing, member: 0 };
       await ageChars(world, io);
       io.updateStats();
       for (let member = 0; member < world.party.size; member++) {
+        c.progress = { phase: CombatPhase.Preparing, member };
         c.activeMember = member;
         if (world.resurrecting) return;
         placeRevived(world, io);
         io.highlightMember(member, true);
-        if (world.memberAlive(member)) await memberTurn(world, io, member);
+        await actLivingMember(world, io, member);
         // Inside Exodus' castle, time cannot be negated.
         if (world.inExodusCastle()) world.timeNegate = 0;
         c.markedMember = -1;
@@ -395,6 +399,7 @@ export async function combat(world: World, io: GameIO, monsterShape: number, var
         world.timeNegate--;
         continue;
       }
+      c.progress = { phase: CombatPhase.Enemies, member: -1 };
       for (let i = 0; i < 8; i++) {
         if (world.resurrecting) break;
         if (c.monsters[i].hp === 0) continue;
@@ -466,6 +471,12 @@ async function scriptTurn(world: World, io: GameIO, member: number): Promise<voi
     return;
   }
   io.queueKeys(autoCombatKeys(world, member));
+}
+
+async function actLivingMember(world: World, io: GameIO, member: number): Promise<void> {
+  if (!world.memberAlive(member)) return;
+  world.combat!.progress = { phase: CombatPhase.Party, member };
+  await memberTurn(world, io, member);
 }
 
 async function memberTurn(world: World, io: GameIO, member: number): Promise<void> {

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="message_log_heading">Messages</string>
+    <string name="party_loading">Party — Loading</string>
+    <string name="party_title">Party</string>
+    <string name="party_paused">Party — Paused</string>
+    <string name="party_menu">Party — Menu</string>
+    <string name="party_supplies">Gold: %1$d\nFood: %2$d</string>
+    <string name="party_empty_slot">%1$d · Empty slot</string>
+    <string name="party_member_name">"%1$d %2$s\n%3$s | "</string>
+    <string name="party_health">HP %1$d/%2$d</string>
+    <string name="party_mana">" MP %1$s\n"</string>
+    <string name="party_no_mana">—</string>
+    <string name="party_good">Good</string>
+    <string name="party_poisoned">Poisoned</string>
+    <string name="party_dead">Dead</string>
+    <string name="party_ashes">Ashes</string>
+    <string name="party_level_due">Level due</string>
+    <string name="party_selected">Selected</string>
+    <string name="party_current_turn">Current turn</string>
+    <string name="hint_heading">Pinned hint</string>
+    <string name="hint_empty">No hint pinned</string>
+    <string name="hint_instructions">Open Journal, highlight an entry, then press X on your controller or P on a keyboard. Press it again on the same entry to unpin.</string>
+</resources>
