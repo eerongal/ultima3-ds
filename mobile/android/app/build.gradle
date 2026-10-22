@@ -31,7 +31,7 @@ android {
     }
     buildTypes {
         debug {
-            // Keep the hardware probe and its saves separate from the installed game.
+            // Keep development installs and their saves separate from the release app.
             applicationIdSuffix '.dualscreenpoc'
         }
         release {

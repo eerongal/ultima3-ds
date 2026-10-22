@@ -72,8 +72,8 @@ Chromium from the web project's tooling).
 
 ## Signing
 
-The debug build is a separate **Ultima III DS PoC** app, with an optional
-second-display live party/pinned-journal-hint panel, an upper world map with
+Both release and debug builds support an optional second-display live
+party/pinned-journal-hint panel, an upper world map with
 1×/2×/4× zoom in place of the character boxes, and matching bitmap fonts/borders.
 Visual settings update both displays; native logs provide diagnostics.
 Recent messages appear below the lower party list; active prompts remain above. See the
@@ -85,7 +85,10 @@ key; unexplored terrain stays hidden and prompts temporarily replace the key.
 Battles show Now/Up next in the actual turn sequence, with an enemy name/count
 footer. Dead slots, revival and time negation update the pending list; ordinary
 exploration views return when the battle ends.
-Release builds keep the ordinary game and do not enable the panel.
+The release app keeps its existing identity and saves. Debug builds remain a
+separate **Ultima III DS PoC** app with independent storage. Compatible second
+displays activate the companion automatically; a single display uses the
+ordinary layout. Saves are not copied between the two apps automatically.
 
 Android refuses an unsigned APK, and refuses to update an app whose new
 build is signed with a different key. `sideload.keystore` is therefore

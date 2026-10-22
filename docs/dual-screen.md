@@ -1,6 +1,6 @@
 # Android dual-screen companion
 
-The experimental Android debug build runs the game on one display and a native
+The Android release and debug builds run the game on one display and a native
 companion on another. One WebView owns gameplay, input, audio and saves; the
 companion receives read-only snapshots. The companion uses the selected bitmap
 font, frame artwork and scanline settings.
@@ -83,11 +83,14 @@ game layout available.
 
 ## Build and install
 
-Dual-screen support is currently **debug-only**. The debug app is **Ultima III DS
-PoC**, package `com.synthwavepixel.ultima3.dualscreenpoc`, with storage separate
-from the ordinary release app. Release builds and `npm run apk` retain the
-ordinary single-screen behavior. The native resource overlay controls this;
-there is no runtime enable switch.
+Dual-screen support is enabled in **release and debug builds**. The release
+app retains package `com.synthwavepixel.ultima3` and its existing saves. The
+debug app remains **Ultima III DS PoC**, package
+`com.synthwavepixel.ultima3.dualscreenpoc`, with separate storage. Saves and
+settings are not copied between the apps automatically. The native
+`dual_screen_companion` resource enables the feature; display availability
+automatically selects the companion or ordinary layout. There is no runtime
+enable switch.
 
 Use Node 22, JDK 21 and an Android SDK with platform 35 and the build tools
 requested by Gradle. Set `JAVA_HOME` and `ANDROID_HOME` appropriately.
@@ -99,11 +102,15 @@ cd ../mobile
 npm ci
 npm run bundle
 npx cap sync android
-cd android
-./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.synthwavepixel.ultima3.dualscreenpoc/com.synthwavepixel.ultima3.MainActivity
+npm run apk
+adb install -r dist/Ultima-III-<version>-android.apk
+adb shell am start -n com.synthwavepixel.ultima3/com.synthwavepixel.ultima3.MainActivity
 ```
+
+For a separate development install, run `:app:assembleDebug` from
+`mobile/android/` and install `app/build/outputs/apk/debug/app-debug.apk`.
+Native release checks are `:app:testReleaseUnitTest :app:lintRelease`;
+the corresponding Debug tasks verify the development variant.
 
 Local Node 22.15 requires `NODE_OPTIONS=--experimental-strip-types` for the
 existing build's direct TypeScript tool. Restricted environments may need a
@@ -118,7 +125,7 @@ passing Android unit tests. Four pre-existing Windows failures remain in
 `web/tests/steamArt.test.ts` (Unix paths, symlink permissions and permission-mode
 expectations). Web type checking/lint/formatting, production bundling, Android
 assembly and release resource processing pass. Android lint reports zero errors
-and 18 existing warnings. Release resources keep the companion disabled.
+and 18 existing warnings. Both variants enable the companion resource.
 
 Physical validation covers the AYN Thor on Android 13. The owner confirmed party,
 hint, message, minimap, dungeon and town readability; lower touch/controller
@@ -128,6 +135,12 @@ changes, graphics themes, discovery preservation, cards, prompts, damage/status
 snapshots, counts and turn phases. Web tests also exercise complete controlled
 combat loops with and without time negation. Some ADB captures omit static text
 that is visible on the physical device.
+
+The signed release APK was also installed fresh on the Thor under its normal
+package without copying PoC data. Release unit tests pass, the APK is
+non-debuggable, and both variants package the enabled companion resource.
+Release startup delivered theme/status snapshots, lower touch retained WebView
+focus, and screen-toggle plus Home/reopen checks restored the companion.
 
 Before claiming support on another handheld, check:
 
@@ -139,7 +152,7 @@ Before claiming support on another handheld, check:
 
 Backlog: other-device validation, screen-role selection, smaller-screen tuning,
 castle maps, named/selectable town locations and richer enemy information.
-Enabling release builds remains a separate decision.
+Release builds retain ordinary single-screen fallback when no companion is available.
 
 For lifecycle, selection, input-focus and fallback diagnostics:
 

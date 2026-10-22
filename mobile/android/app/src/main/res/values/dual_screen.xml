@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <bool name="dual_screen_poc">false</bool>
+    <bool name="dual_screen_companion">true</bool>
 </resources>

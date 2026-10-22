@@ -22,7 +22,7 @@ import com.synthwavepixel.ultima3.companion.PartyStatusPlugin;
  * The game's activity: the web view fills the screen with the system bars hidden (a swipe from an edge shows them
  * for a moment) - hidden again whenever they come back, as on waking from sleep, and at any button or touch after,
  * after the Ultima V port's - the Back button opens the game's Pause menu as Escape does on a keyboard, and
- * QuitPlugin lets the title menu's Quit close the app. Debug builds also host the dual-screen diagnostic probe.
+ * QuitPlugin lets the title menu's Quit close the app. A compatible second display hosts the native companion.
  */
 public class MainActivity extends BridgeActivity implements PartyStatusPlugin.Host {
   private DualScreenProbe displayProbe;
@@ -52,7 +52,7 @@ public class MainActivity extends BridgeActivity implements PartyStatusPlugin.Ho
   @Override
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(QuitPlugin.class); // before super.onCreate, which builds the bridge with the plugins it has
-    if (getResources().getBoolean(R.bool.dual_screen_poc)) registerPlugin(PartyStatusPlugin.class);
+    if (getResources().getBoolean(R.bool.dual_screen_companion)) registerPlugin(PartyStatusPlugin.class);
     super.onCreate(savedInstanceState);
     hideSystemBars();
     // Whenever the bars come back to stay (a swipe's are only shown for a moment, and leave the insets alone), they
@@ -64,7 +64,7 @@ public class MainActivity extends BridgeActivity implements PartyStatusPlugin.Ho
     IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
     filter.addAction(Intent.ACTION_USER_PRESENT);
     ContextCompat.registerReceiver(this, woken, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
-    if (getResources().getBoolean(R.bool.dual_screen_poc)) {
+    if (getResources().getBoolean(R.bool.dual_screen_companion)) {
       displayProbe = new DualScreenProbe(this, getBridge().getWebView(), this::companionAvailabilityChanged);
     }
   }
