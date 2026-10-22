@@ -9,7 +9,7 @@ function bridge() {
     theme: vi.fn().mockResolvedValue(undefined),
     publish: vi.fn().mockResolvedValue(undefined),
     availability: vi.fn().mockResolvedValue({ available: false }),
-    addListener: vi.fn(async (_event: 'availabilityChanged', callback: (state: CompanionAvailability) => void) => {
+    addListener: vi.fn().mockImplementation(async (_event: string, callback: (state: CompanionAvailability) => void) => {
       listener = callback;
       return { remove: vi.fn().mockResolvedValue(undefined) };
     }),

@@ -19,6 +19,7 @@ import org.json.JSONException;
 import org.json.JSONTokener;
 import com.synthwavepixel.ultima3.companion.PartySnapshot;
 import com.synthwavepixel.ultima3.companion.CompanionTheme;
+import com.synthwavepixel.ultima3.companion.TitleMenuSnapshot;
 
 /** Native-only display spike. The companion never creates another game, audio player or save writer. */
 public final class DualScreenProbe implements DisplayManager.DisplayListener {
@@ -37,6 +38,7 @@ public final class DualScreenProbe implements DisplayManager.DisplayListener {
   private final Activity activity;
   private final WebView web;
   private final AvailabilityListener availabilityChanged;
+  private final TitleMenuSnapshot.SelectionListener menuSelected;
   private final DisplayManager displays;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final ContentObserver thorModeObserver = new ContentObserver(handler) {
@@ -54,10 +56,12 @@ public final class DualScreenProbe implements DisplayManager.DisplayListener {
   private CompanionTheme theme;
   private boolean lastAvailable;
 
-  public DualScreenProbe(Activity activity, WebView web, AvailabilityListener availabilityChanged) {
+  public DualScreenProbe(Activity activity, WebView web, AvailabilityListener availabilityChanged,
+      TitleMenuSnapshot.SelectionListener menuSelected) {
     this.activity = activity;
     this.web = web;
     this.availabilityChanged = availabilityChanged;
+    this.menuSelected = menuSelected;
     displays = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
   }
 
@@ -89,6 +93,9 @@ public final class DualScreenProbe implements DisplayManager.DisplayListener {
 
   public void updateParty(PartySnapshot snapshot) {
     if (party == null) Log.i(TAG, "Party companion received its first snapshot");
+    if (party == null || party.playing != snapshot.playing || (party.menu == null) != (snapshot.menu == null)) {
+      Log.i(TAG, "Companion content=" + (snapshot.playing ? "gameplay" : snapshot.menu == null ? "title guidance" : "title menu"));
+    }
     party = snapshot;
     render();
   }
@@ -150,7 +157,9 @@ public final class DualScreenProbe implements DisplayManager.DisplayListener {
       Log.w(TAG, "Companion display disappeared before opening: " + id);
       return;
     }
-    ProbePresentation next = new ProbePresentation(activity, target, this::tap);
+    ProbePresentation next = new ProbePresentation(activity, target, this::tap, (menu, index) -> {
+      if (isAvailable()) menuSelected.select(menu, index);
+    });
     next.setOnDismissListener(dialog -> {
       if (presentation != next) return;
       presentation = null;

@@ -8,6 +8,16 @@ import org.json.JSONObject;
 import org.junit.Test;
 
 public class PartySnapshotTest {
+  @Test public void titleChoicesAreOptionalAndCannotAppearDuringGameplay() throws JSONException {
+    JSONObject menu = new JSONObject().put("id", 1).put("title", "Options").put("cursor", 0)
+        .put("items", new JSONArray().put(new JSONObject().put("label", "Settings").put("disabled", false)));
+    assertNull(PartySnapshot.parse(snapshot()).menu);
+    assertNull(PartySnapshot.parse(snapshot().put("menu", JSONObject.NULL)).menu);
+    PartySnapshot title = PartySnapshot.parse(snapshot().put("playing", false).put("menu", menu));
+    assertEquals("Settings", title.menu.items.get(0).label);
+    assertThrows(JSONException.class, () -> PartySnapshot.parse(snapshot().put("menu", menu)));
+  }
+
   @Test public void copiesTheMessageLogAndSupportsEarlierSchemaTwoClients() throws JSONException {
     JSONArray rows = new JSONArray().put("South (x3)").put("").put(" Who?");
     PartySnapshot parsed = PartySnapshot.parse(snapshot().put("log", rows));

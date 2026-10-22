@@ -100,6 +100,7 @@ import type { PinnedJournalHint } from './pinnedHint.ts';
 import type { CompanionThemePublisher } from './companionTheme.ts';
 import { firstUpperMessageRow, messageLines, MESSAGE_COLUMNS, MESSAGE_ROWS } from './messageLog.ts';
 import { CompanionView, companionView, dungeonViewMode } from './companionView.ts';
+import { CompanionTitleMenu, type CompanionMenuSelection } from './companionTitleMenu.ts';
 import { fitDungeonLevel } from './dungeonPanel.ts';
 import { townMarks } from '../game/townMap.ts';
 import { paintTownMarks, TOWN_KEY } from './townPanel.ts';
@@ -251,6 +252,7 @@ export class Screen implements GameIO {
   onPartyStatusChange: ((snapshot: PartyStatus) => void) | null = null;
   pinnedJournalHint: PinnedJournalHint | null = null;
   private companionAvailable = false;
+  private readonly companionTitleMenu = new CompanionTitleMenu();
   private upperMap = false;
   private companionViewState: CompanionView | null = null;
   private readonly liveMapArt = new LiveMapArt();
@@ -467,6 +469,13 @@ export class Screen implements GameIO {
     if (this.companionAvailable === available) return;
     this.companionAvailable = available;
     console.info(available ? 'Companion layout enabled' : 'Companion layout: restoring upper-screen party status');
+    if (this.companionTitleMenu.open && !this.underPaused) this.showMenuNow();
+  }
+
+  selectCompanionMenu(selection: CompanionMenuSelection): void {
+    if (!this.companionAvailable || this.frameShown || !this.keyboard.waiting) return;
+    if (!this.companionTitleMenu.select(selection)) return;
+    this.keyboard.push(Key.Enter, 'touch');
   }
 
   private paintUpperPanel(time: number): void {
@@ -989,6 +998,7 @@ export class Screen implements GameIO {
       menu.cursor = cursor;
       if (menu.cursor >= menu.visibleRows) menu.top = menu.cursor - menu.visibleRows + 1;
     }
+    if (!this.frameShown && place?.companion) this.companionTitleMenu.begin(menu, visible);
     this.openMenu(menu);
     const feedback = !this.frameShown;
     const cards = this.frameShown && visible.some((o) => o.card);
@@ -1859,6 +1869,7 @@ export class Screen implements GameIO {
 
   /** Close the menu window and restore what it covered. */
   private closeMenu(): void {
+    this.companionTitleMenu.close();
     this.menu = null;
     if (this.underMenu) this.ctx.drawImage(this.underMenu.image, this.underMenu.x, this.underMenu.y);
     this.underMenu = null;
@@ -1868,6 +1879,10 @@ export class Screen implements GameIO {
   /** Redraw the open menu (after the cursor moved or its text changed). */
   private showMenuNow(): void {
     if (!this.menu) return;
+    if (this.companionTitleMenu.open && this.companionAvailable) {
+      this.black(this.menu.x, this.menu.y, this.menu.width, this.menu.visibleRows + 2);
+      return;
+    }
     if (this.viewCovered) drawMenu(this.ctx, this.gfx, this.cell, this.menu);
     else this.viewDirty = true;
   }
@@ -2511,6 +2526,7 @@ export class Screen implements GameIO {
     if (!this.underPaused) return;
     this.ctx.drawImage(this.underPaused.image, this.underPaused.x, this.underPaused.y);
     this.underPaused = null;
+    if (this.companionTitleMenu.open) this.showMenuNow();
   }
 
   // -------------------------------------------------------------------------
@@ -2821,6 +2837,7 @@ export class Screen implements GameIO {
       hint: this.pinnedJournalHint?.read() ?? null,
       line: this.panelLine,
       log: messageLines(this.textRows, this.frameShown),
+      menu: this.companionTitleMenu.snapshot(),
     });
   }
 

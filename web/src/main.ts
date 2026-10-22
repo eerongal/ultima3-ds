@@ -40,7 +40,7 @@ import { MusicPlayer } from './ui/music.ts';
 import { Screen } from './ui/screen.ts';
 import { PartyStatusPublisher } from './ui/partyStatus.ts';
 import { CompanionThemePublisher } from './ui/companionTheme.ts';
-import { watchCompanion, type NativeCompanion } from './ui/companion.ts';
+import { watchCompanion, watchCompanionMenu, type NativeCompanion } from './ui/companion.ts';
 import { PinnedJournalHint } from './ui/pinnedHint.ts';
 import { TILE_SETS } from './ui/help.ts';
 import { DEFAULT_MAP_ZOOM, validMapZoom, type MapZoom } from './ui/persistentMap.ts';
@@ -274,6 +274,7 @@ async function start(): Promise<void> {
     const companion = new PartyStatusPublisher(plugins.PartyStatus);
     screen.onPartyStatusChange = (snapshot) => companion.update(snapshot);
     screen.companionTheme = new CompanionThemePublisher(plugins.PartyStatus);
+    void watchCompanionMenu(plugins.PartyStatus, (selection) => screen.selectCompanionMenu(selection));
     void watchCompanion(plugins.PartyStatus, (available) => screen.setCompanionAvailable(available));
     console.info('Party status: companion bridge connected');
   }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title_menu_guidance">Continue on the upper screen.</string>
+    <string name="title_menu_controls">D-pad: select   A: confirm\nOr touch an option</string>
+    <string name="title_menu_choice">"%1$s %2$s"</string>
+</resources>

@@ -15,6 +15,8 @@ import com.synthwavepixel.ultima3.companion.HintPanel;
 import com.synthwavepixel.ultima3.companion.CompanionTheme;
 import com.synthwavepixel.ultima3.companion.CompanionLayout;
 import com.synthwavepixel.ultima3.companion.MessageLogPanel;
+import com.synthwavepixel.ultima3.companion.TitleMenuPanel;
+import com.synthwavepixel.ultima3.companion.TitleMenuSnapshot;
 import java.util.Objects;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -31,10 +33,15 @@ final class ProbePresentation extends Presentation {
   private MessageLogPanel messages;
   private static final int PARTY_WEIGHT = 3;
   private static final int LOG_WEIGHT = 1;
+  private final TitleMenuSnapshot.SelectionListener selected;
+  private LinearLayout left;
+  private TitleMenuPanel title;
+  private ScrollView titleScroll;
 
-  ProbePresentation(Context context, Display display, Runnable onTap) {
+  ProbePresentation(Context context, Display display, Runnable onTap, TitleMenuSnapshot.SelectionListener selected) {
     super(context, display);
     this.onTap = onTap;
+    this.selected = selected;
   }
 
   @Override protected void onCreate(Bundle savedInstanceState) {
@@ -48,7 +55,7 @@ final class ProbePresentation extends Presentation {
     hint = new HintPanel(getContext());
     party.setOnClickListener(view -> tapped());
     hint.setOnClickListener(view -> tapped());
-    LinearLayout left = new LinearLayout(getContext());
+    left = new LinearLayout(getContext());
     left.setOrientation(LinearLayout.VERTICAL);
     left.addView(scroll(party), section(PARTY_WEIGHT));
     messages = new MessageLogPanel(getContext());
@@ -58,6 +65,14 @@ final class ProbePresentation extends Presentation {
     hintScroll = scroll(hint);
     content.addView(hintScroll, column());
     content.setPartyPanel(party, messages);
+    title = new TitleMenuPanel(getContext(), (id, index) -> {
+      tapped();
+      selected.select(id, index);
+    });
+    titleScroll = scroll(title);
+    content.addView(titleScroll, column());
+    left.setVisibility(View.GONE);
+    hintScroll.setVisibility(View.GONE);
     setContentView(content);
     hideSystemBars();
   }
@@ -67,9 +82,17 @@ final class ProbePresentation extends Presentation {
     hint.applyTheme(theme);
     messages.applyTheme(theme);
     content.applyTheme(theme);
+    title.applyTheme(theme);
   }
 
   void render(PartySnapshot snapshot) {
+    boolean playing = snapshot != null && snapshot.playing;
+    content.setGameplay(playing);
+    left.setVisibility(playing ? View.VISIBLE : View.GONE);
+    hintScroll.setVisibility(playing ? View.VISIBLE : View.GONE);
+    titleScroll.setVisibility(playing ? View.GONE : View.VISIBLE);
+    title.render(snapshot == null ? null : snapshot.menu);
+    if (!playing) return;
     if (party != null) party.render(snapshot);
     if (hint != null && snapshot != null) renderHint(snapshot.hint);
     if (messages != null && snapshot != null) messages.render(snapshot.log);

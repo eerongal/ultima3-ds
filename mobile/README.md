@@ -76,6 +76,9 @@ Both release and debug builds support an optional second-display live
 party/pinned-journal-hint panel, an upper world map with
 1×/2×/4× zoom in place of the character boxes, and matching bitmap fonts/borders.
 Visual settings update both displays; native logs provide diagnostics.
+On the title page, the main menu moves to the companion with touch and controller
+selection. Party details and pinned hints appear only during gameplay. Title
+submenus remain above; disabling the companion restores the upper main menu.
 Recent messages appear below the lower party list; active prompts remain above. See the
 [dual-screen guide](../docs/dual-screen.md) for building, testing and device compatibility.
 In dungeons, dual-screen mode automatically pairs first person with the explored

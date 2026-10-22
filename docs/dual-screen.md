@@ -2,12 +2,21 @@
 
 The Android release and debug builds run the game on one display and a native
 companion on another. One WebView owns gameplay, input, audio and saves; the
-companion receives read-only snapshots. The companion uses the selected bitmap
+companion receives display snapshots and can select a current title-menu item.
+Gameplay input stays on the main display. The companion uses the selected bitmap
 font, frame artwork and scanline settings.
 
 ## Current behavior
 
-The companion shows party status and recent messages in the left column, with a
+At the title screen, the companion shows the main menu instead of party details
+or a pinned hint. Physical controls and lower-screen touch select the same game
+menu. Disabling the companion restores the upper menu without resetting its
+selection. Settings, party organization and other title submenus remain on the
+upper screen, with guidance below; gameplay restores the party/hint layout.
+Menu selections carry a session ID and are rejected when stale, repeated,
+disabled, or received outside the waiting title menu.
+
+During gameplay, the companion shows party status and recent messages in the left column, with a
 pinned journal hint in the right column. These areas scroll independently.
 Character selection, current-turn feedback, conditions and damage feedback are
 preserved. The message panel mirrors the existing transient message buffer,
@@ -120,9 +129,9 @@ same debug signing key when updating the test app to retain its storage.
 
 ## Validation and remaining work
 
-As of October 21, 2026, the implementation has 488 passing web tests and 26
-passing Android unit tests. Four pre-existing Windows failures remain in
-`web/tests/steamArt.test.ts` (Unix paths, symlink permissions and permission-mode
+As of October 21, 2026, the latest check has 481 passing web tests and 30
+passing Android unit tests. The web run excludes `web/tests/steamArt.test.ts`,
+which has four pre-existing Windows failures (Unix paths, symlink permissions and permission-mode
 expectations). Web type checking/lint/formatting, production bundling, Android
 assembly and release resource processing pass. Android lint reports zero errors
 and 18 existing warnings. Both variants enable the companion resource.
@@ -141,6 +150,11 @@ package without copying PoC data. Release unit tests pass, the APK is
 non-debuggable, and both variants package the enabled companion resource.
 Release startup delivered theme/status snapshots, lower touch retained WebView
 focus, and screen-toggle plus Home/reopen checks restored the companion.
+
+The title-menu release update was checked with lower-screen touch, upper-screen
+submenu navigation, key navigation/confirmation after touch, and top-only/dual
+switching with the same selection preserved. Captures show the upper title
+without its menu and the matching lower menu without party/hint content.
 
 Before claiming support on another handheld, check:
 

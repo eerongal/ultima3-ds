@@ -127,7 +127,7 @@ export async function mainMenu(world: World, io: GameIO, play: () => Promise<voi
     // The window starts on row 15, or higher for a longer list (Quit in the app, an update waiting), so that its
     // bottom border stays above the copyright on row 22. The rows under the tagline are free to take.
     const row = Math.min(15, TITLE_MENU_LAST_ROW - entries.length - 1);
-    const key = await io.chooseFromList(entries, { row, title: mm(world, MM.Options) });
+    const key = await io.chooseFromList(entries, { row, title: mm(world, MM.Options), companion: true });
     if (key === 'Q' && options.quit) {
       options.quit(); // the app goes; should it not, the menu is still here
     } else if (key === 'S') {

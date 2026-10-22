@@ -4,6 +4,7 @@ import { hasMagic } from '../game/context.ts';
 import { levelUpDue, PlayerOffset, type PlayerRecord, type StatusLetter } from '../game/player.ts';
 import { gearName } from '../game/cards.ts';
 import type { PinnedHint } from './pinnedHint.ts';
+import type { CompanionMenu } from './companionTitleMenu.ts';
 
 export const PARTY_STATUS_VERSION = 2;
 const PARTY_POSITIONS = [0, 1, 2, 3] as const;
@@ -49,6 +50,7 @@ export interface PartyStatus {
   members: PartyMemberStatus[];
   hint: PinnedHint | null;
   log: string[];
+  menu?: CompanionMenu | null;
 }
 
 export interface PartyPanelState {
@@ -60,6 +62,7 @@ export interface PartyPanelState {
   hint?: PinnedHint | null;
   line?: PartyPanelLine;
   log?: readonly string[];
+  menu?: CompanionMenu | null;
 }
 
 export function partyStatus(world: World, panel: PartyPanelState): PartyStatus {
@@ -94,10 +97,11 @@ export function partyStatus(world: World, panel: PartyPanelState): PartyStatus {
     members,
     hint: panel.hint ?? null,
     log: panel.playing ? [...(panel.log ?? [])] : [],
+    menu: panel.playing ? null : (panel.menu ?? null),
   };
 }
 
-/** The app's own Capacitor plugin; absent in ordinary release/browser builds. */
+/** The app's own Capacitor plugin; absent in ordinary browser builds. */
 export interface NativePartyStatus {
   publish(options: { snapshot: PartyStatus }): Promise<void>;
 }

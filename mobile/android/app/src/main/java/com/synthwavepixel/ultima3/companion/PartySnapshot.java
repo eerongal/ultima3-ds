@@ -79,6 +79,7 @@ public final class PartySnapshot {
   public final int food;
   public final Hint hint;
   public final List<String> log;
+  public final TitleMenuSnapshot menu;
   private static final int LOG_ROWS = 11;
   private static final int LOG_COLUMNS = 16;
   private final Member[] members = new Member[CAPACITY];
@@ -92,6 +93,8 @@ public final class PartySnapshot {
     if (!data.has("hint")) throw new JSONException("Missing pinned hint field");
     hint = data.isNull("hint") ? null : new Hint(data.getJSONObject("hint"));
     log = readLog(data);
+    menu = data.isNull("menu") || !data.has("menu") ? null : new TitleMenuSnapshot(data.getJSONObject("menu"));
+    if (playing && menu != null) throw new JSONException("Title menu cannot appear during gameplay");
     JSONArray list = data.getJSONArray("members");
     if (list.length() > CAPACITY) throw new JSONException("Too many party members");
     for (int index = 0; index < list.length(); index++) {

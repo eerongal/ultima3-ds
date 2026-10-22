@@ -40,6 +40,8 @@ export interface MenuPlacement {
   title: string;
   /** Item to highlight first (default 0). */
   cursor?: number;
+  /** The main title choices may move to an available native companion. */
+  companion?: boolean;
 }
 
 export interface MenuOption {

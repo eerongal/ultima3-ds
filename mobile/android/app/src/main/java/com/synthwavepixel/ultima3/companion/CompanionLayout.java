@@ -16,6 +16,7 @@ public final class CompanionLayout extends LinearLayout {
   private PartyPanel party;
   private GameFrame frame;
   private View messages;
+  private boolean gameplay;
 
   public CompanionLayout(Context context) {
     super(context);
@@ -27,6 +28,12 @@ public final class CompanionLayout extends LinearLayout {
   public void setPartyPanel(PartyPanel value, View messages) {
     party = value;
     this.messages = messages;
+  }
+
+  public void setGameplay(boolean value) {
+    if (gameplay == value) return;
+    gameplay = value;
+    invalidate();
   }
 
   public void applyTheme(CompanionTheme value) {
@@ -50,7 +57,7 @@ public final class CompanionLayout extends LinearLayout {
   }
 
   private void drawSharedBorders(Canvas canvas) {
-    if (frame == null) return;
+    if (frame == null || !gameplay) return;
     frame.drawDivider(canvas);
     if (party == null) return;
     canvas.save();

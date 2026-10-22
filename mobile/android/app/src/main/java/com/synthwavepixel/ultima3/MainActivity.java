@@ -65,7 +65,7 @@ public class MainActivity extends BridgeActivity implements PartyStatusPlugin.Ho
     filter.addAction(Intent.ACTION_USER_PRESENT);
     ContextCompat.registerReceiver(this, woken, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     if (getResources().getBoolean(R.bool.dual_screen_companion)) {
-      displayProbe = new DualScreenProbe(this, getBridge().getWebView(), this::companionAvailabilityChanged);
+      displayProbe = new DualScreenProbe(this, getBridge().getWebView(), this::companionAvailabilityChanged, this::companionMenuSelected);
     }
   }
 
@@ -93,6 +93,11 @@ public class MainActivity extends BridgeActivity implements PartyStatusPlugin.Ho
   private void companionAvailabilityChanged(boolean available) {
     com.getcapacitor.PluginHandle handle = getBridge().getPlugin("PartyStatus");
     if (handle != null) ((PartyStatusPlugin) handle.getInstance()).availabilityChanged(available);
+  }
+
+  private void companionMenuSelected(int id, int index) {
+    com.getcapacitor.PluginHandle handle = getBridge().getPlugin("PartyStatus");
+    if (handle != null) ((PartyStatusPlugin) handle.getInstance()).menuSelected(id, index);
   }
 
   @Override

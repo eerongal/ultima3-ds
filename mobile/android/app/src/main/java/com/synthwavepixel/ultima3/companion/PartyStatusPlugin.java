@@ -9,7 +9,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONException;
 
-/** Read-only companion data and display availability; no game commands cross this bridge. */
+/** Companion display data, availability and session-scoped title-menu selections. */
 @CapacitorPlugin(name = "PartyStatus")
 public class PartyStatusPlugin extends Plugin {
   private static final String TAG = "U3PartyStatus";
@@ -31,6 +31,11 @@ public class PartyStatusPlugin extends Plugin {
 
   public void availabilityChanged(boolean available) {
     notifyListeners("availabilityChanged", new JSObject().put("available", available));
+  }
+
+  public void menuSelected(int id, int index) {
+    Log.i(TAG, "Title menu selection; session=" + id + "; item=" + index);
+    notifyListeners("menuSelected", new JSObject().put("id", id).put("index", index));
   }
 
   @PluginMethod
